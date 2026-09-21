@@ -2,7 +2,9 @@ name = "moonbit-community/evol"
 
 version = "0.1.0"
 
-import {}
+import {
+  "moonbitlang/async@0.22.1",
+}
 
 readme = "README.md"
 
