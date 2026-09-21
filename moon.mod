@@ -10,7 +10,7 @@ repository = "https://github.com/moonbit-community/evol"
 
 license = "Apache-2.0"
 
-keywords = []
+keywords = [ "javascript", "parser", "compressor", "mangler" ]
 
 description = "A slightly faster JavaScript mangler/compressor for MoonBit."
 
