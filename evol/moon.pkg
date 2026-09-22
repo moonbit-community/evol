@@ -1,0 +1,12 @@
+import {
+  "moonbit-community/evol-minifier" @minifier,
+  "moonbitlang/async",
+  "moonbitlang/async/stdio",
+  "moonbitlang/async/fs",
+  "moonbitlang/core/argparse",
+  "moonbitlang/core/debug",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")

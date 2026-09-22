@@ -1,0 +1,73 @@
+///|
+#warnings("-implicit_impl_as_method")
+priv enum Tok {
+  Eof
+  Ident
+  Number
+  Str
+  Regex
+  TmplNoSub
+  TmplHead
+  TmplMiddle
+  TmplTail
+  LParen
+  RParen
+  LBracket
+  RBracket
+  LBrace
+  RBrace
+  Semicolon
+  Comma
+  Dot
+  Ellipsis
+  Question
+  QuestionDot
+  Colon
+  Arrow
+  Assign
+  AddAssign
+  SubAssign
+  MulAssign
+  DivAssign
+  ModAssign
+  ExpAssign
+  ShlAssign
+  ShrAssign
+  UshrAssign
+  BitAndAssign
+  BitOrAssign
+  BitXorAssign
+  LogicalAndAssign
+  LogicalOrAssign
+  NullishAssign
+  Plus
+  Minus
+  Star
+  Slash
+  Percent
+  StarStar
+  PlusPlus
+  MinusMinus
+  Shl
+  Shr
+  Ushr
+  BitAnd
+  BitOr
+  BitXor
+  Not
+  Tilde
+  LogicalAnd
+  LogicalOr
+  Nullish
+  Lt
+  Gt
+  Le
+  Ge
+  Eq
+  Ne
+  StrictEq
+  StrictNe
+} derive(Eq, Debug)
+
+///|
+extend Tok with @debug.Debug::{to_repr}
