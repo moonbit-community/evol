@@ -423,10 +423,8 @@ fn Printer::expression(self : Printer, id : Int) -> Unit raise ParseError {
   let n = self.program.nodes[id]
   match n.kind {
     Identifier => self.write_reference(n.a)
-    NumberLiteral
-    | StringLiteral
-    | RegexLiteral
-    | TemplateNoSubstitution => self.write_span(n.a, n.b, true)
+    NumberLiteral | StringLiteral | RegexLiteral | TemplateNoSubstitution =>
+      self.write_span(n.a, n.b, true)
     BooleanLiteral =>
       self.write_string(if n.a == 1 { "true" } else { "false" }, true)
     NullLiteral => self.write_string("null", true)

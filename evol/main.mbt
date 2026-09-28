@@ -19,14 +19,12 @@ async fn main {
       ),
     ],
   )
-  let matches = try command.parse() catch {
+  let matches = command.parse() catch {
     error => {
       @stdio.stderr.write("evol: \{@debug.to_string(error)}\n")
       @sys.exit(1)
       return
     }
-  } noraise {
-    m => m
   }
   let top_level = matches.flags.get("toplevel").unwrap_or(false)
   let source = match matches.values.get("input") {
@@ -45,8 +43,6 @@ async fn main {
       @sys.exit(1)
       return
     }
-  } noraise {
-    s => s
   }
   @stdio.stdout.write(output)
 }
