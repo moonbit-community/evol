@@ -12,27 +12,27 @@ priv struct Parenthesized {
 /// The provisional scope is retained for arrows and collapsed otherwise.
 fn Parser::parenthesized(self : Parser) -> Parenthesized raise ParseError {
   let outer_scope = self.scope
-  let parameter_scope = self.prog.push_scope(
+  let parameter_scope = self.program.push_scope(
     outer_scope, scope_arrow_parameters,
   )
   self.scope = parameter_scope
-  self.expect(LParen)
+  self.expect(LeftParenthesis)
   let items : Array[Int] = []
   let mut trailing_comma = false
-  while self.lx.tok != RParen {
+  while self.lexer.token != RightParenthesis {
     let item = if self.eat(Ellipsis) {
-      let inner = self.parse_assign_in()
-      self.prog.node(Spread, inner, 0, 0, 0)
+      let inner = self.parse_assignment_allowing_in()
+      self.program.node(Spread, inner, 0, 0, 0)
     } else {
-      self.parse_assign_in()
+      self.parse_assignment_allowing_in()
     }
     items.push(item)
     if !self.eat(Comma) {
       break
     }
-    trailing_comma = self.lx.tok == RParen
+    trailing_comma = self.lexer.token == RightParenthesis
   }
-  self.expect(RParen)
+  self.expect(RightParenthesis)
   { items, outer_scope, parameter_scope, trailing_comma, }
 }
 
@@ -42,13 +42,13 @@ fn Parser::finish_arrow(
   parameters : Parenthesized,
   is_async : Int,
 ) -> Int raise ParseError {
-  guard !self.lx.newline_before else {
+  guard !self.lexer.newline_before else {
     raise Unexpected("newline before arrow")
   }
   let count = parameters.items.length()
   for index in 0..<count {
     let item = parameters.items[index]
-    if self.prog.nodes[item].kind == Spread {
+    if self.program.nodes[item].kind == Spread {
       guard index == count - 1 && !parameters.trailing_comma else {
         raise Unexpected("rest parameter must be last")
       }
@@ -61,16 +61,16 @@ fn Parser::finish_arrow(
   let (body, expr_body) = self.parse_arrow_body()
   self.in_generator = saved_generator
   self.scope = parameters.outer_scope
-  let (offset, count) = self.prog.edge_list(parameters.items)
-  let index = self.prog.funcs.length()
-  self.prog.funcs.push({
+  let (offset, count) = self.program.edge_list(parameters.items)
+  let index = self.program.functions.length()
+  self.program.functions.push({
     name: -1,
-    params_off: offset,
-    params_count: count,
+    parameters_offset: offset,
+    parameters_count: count,
     body,
-    flags: fn_arrow + is_async * fn_async + expr_body,
+    flags: function_flag_arrow + is_async * function_flag_async + expr_body,
   })
-  self.prog.node(ArrowExpr, index, 0, 0, 0)
+  self.program.node(ArrowExpression, index, 0, 0, 0)
 }
 
 ///|
@@ -78,8 +78,8 @@ fn Parser::finish_parenthesized(
   self : Parser,
   expression : Parenthesized,
 ) -> Int raise ParseError {
-  let scope = self.prog.scopes[expression.parameter_scope]
-  self.prog.scopes[expression.parameter_scope] = {
+  let scope = self.program.scopes[expression.parameter_scope]
+  self.program.scopes[expression.parameter_scope] = {
     ..scope,
     kind: scope_transparent,
   }
@@ -88,17 +88,17 @@ fn Parser::finish_parenthesized(
     raise Unexpected("invalid parenthesized expression")
   }
   for item in expression.items {
-    guard self.prog.nodes[item].kind != Spread else {
+    guard self.program.nodes[item].kind != Spread else {
       raise Unexpected("spread requires a parameter or argument list")
     }
   }
   let inner = if expression.items.length() == 1 {
     expression.items[0]
   } else {
-    let (offset, count) = self.prog.edge_list(expression.items)
-    self.prog.node(Sequence, offset, count, 0, 0)
+    let (offset, count) = self.program.edge_list(expression.items)
+    self.program.node(Sequence, offset, count, 0, 0)
   }
-  self.prog.node(Paren, inner, 0, 0, 0)
+  self.program.node(Parenthesized, inner, 0, 0, 0)
 }
 
 ///|
@@ -108,19 +108,19 @@ fn Parser::parse_async_parenthesized(
   name_end : Int,
 ) -> Int raise ParseError {
   let expression = self.parenthesized()
-  if self.lx.tok == Arrow {
+  if self.lexer.token == Arrow {
     return self.finish_arrow(expression, 1)
   }
-  let scope = self.prog.scopes[expression.parameter_scope]
-  self.prog.scopes[expression.parameter_scope] = {
+  let scope = self.program.scopes[expression.parameter_scope]
+  self.program.scopes[expression.parameter_scope] = {
     ..scope,
     kind: scope_transparent,
   }
   self.scope = expression.outer_scope
-  let reference = self.add_ref(self.scope, name_start, name_end)
-  let callee = self.prog.node(Ident, reference, 0, 0, 0)
-  let (offset, count) = self.prog.edge_list(expression.items)
-  self.prog.node(Call, callee, offset, count, 0)
+  let reference = self.add_reference(self.scope, name_start, name_end)
+  let callee = self.program.node(Identifier, reference, 0, 0, 0)
+  let (offset, count) = self.program.edge_list(expression.items)
+  self.program.node(Call, callee, offset, count, 0)
 }
 
 ///|
@@ -130,34 +130,49 @@ fn Parser::cover_pattern(
   id : Int,
   declaring : Bool,
 ) -> Unit raise ParseError {
-  let node = self.prog.nodes[id]
+  let node = self.program.nodes[id]
   let replacement = match node.kind {
-    Ident | PatIdent => {
-      let reference = self.prog.refs[node.a]
+    Identifier | PatternIdentifier => {
+      let reference = self.program.references[node.a]
       if declaring {
-        let sym = self.prog.add_symbol(
+        let symbol = self.program.add_symbol(
           reference.name_start,
           reference.name_end,
           self.scope,
         )
-        self.prog.refs[node.a] = { ..reference, scope: self.scope, sym, }
+        self.program.references[node.a] = {
+          ..reference,
+          scope: self.scope,
+          symbol,
+        }
       }
-      Node::new(if declaring { PatIdent } else { Ident }, node.a, 0, 0, 0)
+      Node::new(
+        if declaring {
+          PatternIdentifier
+        } else {
+          Identifier
+        },
+        node.a,
+        0,
+        0,
+        0,
+      )
     }
-    ArrayLit | ObjectLit | PatArray | PatObject => {
+    ArrayLiteral | ObjectLiteral | PatternArray | PatternObject => {
       for index in 0..<node.b {
-        let item = self.prog.edges[node.a + index]
+        let item = self.program.edges[node.a + index]
         if item >= 0 {
-          let element = self.prog.nodes[item]
-          if element.kind == Spread || element.kind == PatRest {
+          let element = self.program.nodes[item]
+          if element.kind == Spread || element.kind == PatternRest {
             guard index == node.b - 1 && node.d == 0 else {
               raise Unexpected(
                 "rest binding must be last without a trailing comma",
               )
             }
-            if (node.kind == ObjectLit || node.kind == PatObject) && declaring {
-              let target = self.prog.nodes[element.a].kind
-              guard target == Ident || target == PatIdent else {
+            if (node.kind == ObjectLiteral || node.kind == PatternObject) &&
+              declaring {
+              let target = self.program.nodes[element.a].kind
+              guard target == Identifier || target == PatternIdentifier else {
                 raise Unexpected("object rest binding requires an identifier")
               }
             }
@@ -165,49 +180,51 @@ fn Parser::cover_pattern(
           self.cover_pattern(item, declaring)
         }
       }
-      let kind = if node.kind == ArrayLit || node.kind == PatArray {
-        PatArray
+      let kind = if node.kind == ArrayLiteral || node.kind == PatternArray {
+        PatternArray
       } else {
-        PatObject
+        PatternObject
       }
       Node::new(kind, node.a, node.b, 0, 0)
     }
-    Prop | PatProp => {
+    Property | PatternProperty => {
       self.cover_pattern(node.b, declaring)
-      Node::new(PatProp, node.a, node.b, node.c, node.d)
+      Node::new(PatternProperty, node.a, node.b, node.c, node.d)
     }
-    Spread | PatRest => {
-      let target = self.prog.nodes[node.a].kind
-      guard target != Assign && target != PatDefault && target != CoverDefault else {
+    Spread | PatternRest => {
+      let target = self.program.nodes[node.a].kind
+      guard target != Assignment &&
+        target != PatternDefault &&
+        target != CoverDefault else {
         raise Unexpected("rest binding cannot have a default")
       }
       self.cover_pattern(node.a, declaring)
-      Node::new(PatRest, node.a, 0, 0, 0)
+      Node::new(PatternRest, node.a, 0, 0, 0)
     }
-    Assign => {
-      guard self.prog.ops[node.a] == Op::Assign else {
+    Assignment => {
+      guard self.program.operators[node.a] == Operator::Assignment else {
         raise Unexpected("invalid default binding")
       }
       self.cover_pattern(node.b, declaring)
-      Node::new(PatDefault, node.b, node.c, 0, 0)
+      Node::new(PatternDefault, node.b, node.c, 0, 0)
     }
-    CoverDefault | PatDefault => {
+    CoverDefault | PatternDefault => {
       if node.kind == CoverDefault {
-        self.prog.cover_defaults -= 1
+        self.program.cover_defaults -= 1
       }
       self.cover_pattern(node.a, declaring)
-      Node::new(PatDefault, node.a, node.b, 0, 0)
+      Node::new(PatternDefault, node.a, node.b, 0, 0)
     }
     Member | Index if !declaring => node
     _ => raise Unexpected("invalid binding pattern")
   }
-  self.prog.nodes[id] = replacement
+  self.program.nodes[id] = replacement
 }
 
 ///|
 fn Parser::assignment_pattern(self : Parser, id : Int) -> Unit raise ParseError {
-  let kind = self.prog.nodes[id].kind
-  if kind == ArrayLit || kind == ObjectLit {
+  let kind = self.program.nodes[id].kind
+  if kind == ArrayLiteral || kind == ObjectLiteral {
     self.cover_pattern(id, false)
   }
 }

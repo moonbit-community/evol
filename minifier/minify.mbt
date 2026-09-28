@@ -2,8 +2,8 @@
 /// Removes unnecessary whitespace and renames local bindings.
 /// Top-level names and names exposed to dynamic scope are preserved.
 /// Raises ParseError when the input cannot be parsed.
-pub fn minify(src : String) -> String raise ParseError {
-  minify_with(src, false)
+pub fn minify(source : String) -> String raise ParseError {
+  minify_with(source, false)
 }
 
 ///|
@@ -11,11 +11,11 @@ pub fn minify(src : String) -> String raise ParseError {
 /// Public export names are preserved in either mode.
 /// Raises ParseError when the input cannot be parsed.
 pub fn minify_with(
-  src : String,
+  source : String,
   rename_top_level : Bool,
 ) -> String raise ParseError {
-  let prog = parse_program(src)
-  resolve(prog)
-  mangle(prog, rename_top_level)
-  print_program(prog)
+  let program = parse_program(source)
+  resolve(program)
+  mangle(program, rename_top_level)
+  print_program(program)
 }

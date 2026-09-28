@@ -18,9 +18,9 @@ priv enum ModuleStatement {
 
 ///|
 fn Parser::module_node(self : Parser, statement : ModuleStatement) -> Int {
-  let index = self.prog.modules.length()
-  self.prog.modules.push(statement)
-  self.prog.node(ModuleStmt, index, 0, 0, 0)
+  let index = self.program.modules.length()
+  self.program.modules.push(statement)
+  self.program.node(ModuleStatement, index, 0, 0, 0)
 }
 
 ///|
@@ -28,13 +28,15 @@ fn Parser::expect_keyword(
   self : Parser,
   keyword : String,
 ) -> Unit raise ParseError {
-  guard self.lx.is_kw(keyword) else { raise Unexpected("expected " + keyword) }
+  guard self.lexer.is_keyword(keyword) else {
+    raise Unexpected("expected " + keyword)
+  }
   self.advance()
 }
 
 ///|
 fn Parser::module_name(self : Parser) -> Int raise ParseError {
-  guard self.lx.tok == Ident || self.lx.tok == Str else {
+  guard self.lexer.token == Identifier || self.lexer.token == StringLiteral else {
     raise Unexpected("module name expected")
   }
   self.parse_property_key()
@@ -42,17 +44,17 @@ fn Parser::module_name(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::import_binding(self : Parser) -> Int raise ParseError {
-  guard self.lx.tok == Ident else {
+  guard self.lexer.token == Identifier else {
     raise Unexpected("import binding expected")
   }
-  let reference = self.declare_sym(0, self.lx.start, self.lx.end)
+  let reference = self.declare_symbol(0, self.lexer.start, self.lexer.end)
   self.advance()
   reference
 }
 
 ///|
 fn Parser::module_source(self : Parser) -> Int raise ParseError {
-  guard self.lx.tok == Str else {
+  guard self.lexer.token == StringLiteral else {
     raise Unexpected("module source string expected")
   }
   self.parse_property_key()
@@ -60,7 +62,7 @@ fn Parser::module_source(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::import_attributes(self : Parser) -> Int raise ParseError {
-  guard self.lx.is_kw("with") else { return -1 }
+  guard self.lexer.is_keyword("with") else { return -1 }
   self.advance()
   self.parse_object_literal()
 }
@@ -72,43 +74,44 @@ fn Parser::parse_import(self : Parser) -> Int raise ParseError {
   }
   self.expect_keyword("import")
   let bindings : Array[ImportBinding] = []
-  if self.lx.tok != Str {
-    let has_default = self.lx.tok == Ident
+  if self.lexer.token != StringLiteral {
+    let has_default = self.lexer.token == Identifier
     if has_default {
       bindings.push(Default(self.import_binding()))
     }
     let has_more = !has_default || self.eat(Comma)
     if has_more {
-      if self.eat(Star) {
+      if self.eat(Asterisk) {
         self.expect_keyword("as")
         bindings.push(Namespace(self.import_binding()))
       } else {
-        self.expect(LBrace)
-        while self.lx.tok != RBrace {
+        self.expect(LeftBrace)
+        while self.lexer.token != RightBrace {
           let imported = self.module_name()
-          let reference = if self.lx.is_kw("as") {
+          let reference = if self.lexer.is_keyword("as") {
             self.advance()
             self.import_binding()
           } else {
-            let name = self.prog.nodes[imported]
-            guard self.prog.src[name.a] != '\'' && self.prog.src[name.a] != '"' else {
+            let name = self.program.nodes[imported]
+            guard self.program.source[name.a] != '\'' &&
+              self.program.source[name.a] != '"' else {
               raise Unexpected("string import name requires a local alias")
             }
-            self.declare_sym(0, name.a, name.b)
+            self.declare_symbol(0, name.a, name.b)
           }
           bindings.push(Named(imported, reference))
           if !self.eat(Comma) {
             break
           }
         }
-        self.expect(RBrace)
+        self.expect(RightBrace)
       }
     }
     self.expect_keyword("from")
   }
   let source = self.module_source()
   let attributes = self.import_attributes()
-  self.eat_semi()
+  self.eat_semicolon()
   self.module_node(Import(bindings, source, attributes))
 }
 
@@ -118,23 +121,23 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
     raise Unexpected("export must be at module top level")
   }
   self.expect_keyword("export")
-  if self.lx.is_kw("default") {
+  if self.lexer.is_keyword("default") {
     self.advance()
-    let declaration = self.lx.is_kw("function") ||
-      self.lx.is_kw("class") ||
-      (self.lx.is_kw("async") && self.peek_is_kw("function"))
+    let declaration = self.lexer.is_keyword("function") ||
+      self.lexer.is_keyword("class") ||
+      (self.lexer.is_keyword("async") && self.peek_is_keyword("function"))
     let body = if declaration {
-      self.parse_stmt()
+      self.parse_statement()
     } else {
-      self.parse_assign_in()
+      self.parse_assignment_allowing_in()
     }
     if !declaration {
-      self.eat_semi()
+      self.eat_semicolon()
     }
     return self.module_node(ExportDefault(body))
   }
-  if self.eat(Star) {
-    let export_name = if self.lx.is_kw("as") {
+  if self.eat(Asterisk) {
+    let export_name = if self.lexer.is_keyword("as") {
       self.advance()
       self.module_name()
     } else {
@@ -143,14 +146,14 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
     self.expect_keyword("from")
     let source = self.module_source()
     let attributes = self.import_attributes()
-    self.eat_semi()
+    self.eat_semicolon()
     return self.module_node(ExportAll(export_name, source, attributes))
   }
-  if self.eat(LBrace) {
+  if self.eat(LeftBrace) {
     let names : Array[(Int, Int)] = []
-    while self.lx.tok != RBrace {
+    while self.lexer.token != RightBrace {
       let source_name = self.module_name()
-      let exported = if self.lx.is_kw("as") {
+      let exported = if self.lexer.is_keyword("as") {
         self.advance()
         self.module_name()
       } else {
@@ -161,8 +164,8 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
         break
       }
     }
-    self.expect(RBrace)
-    let source = if self.lx.is_kw("from") {
+    self.expect(RightBrace)
+    let source = if self.lexer.is_keyword("from") {
       self.advance()
       self.module_source()
     } else {
@@ -171,18 +174,18 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
     let specifiers = names.map(pair => {
       let (source_name, exported) = pair
       guard source < 0 else { return pair }
-      let name = self.prog.nodes[source_name]
-      let reference = self.add_ref(0, name.a, name.b)
-      (self.prog.node(Ident, reference, 0, 0, 0), exported)
+      let name = self.program.nodes[source_name]
+      let reference = self.add_reference(0, name.a, name.b)
+      (self.program.node(Identifier, reference, 0, 0, 0), exported)
     })
     let attributes = if source >= 0 { self.import_attributes() } else { -1 }
-    self.eat_semi()
+    self.eat_semicolon()
     return self.module_node(ExportNames(specifiers, source, attributes))
   }
-  let body = self.parse_stmt()
-  guard self.prog.nodes[body].kind == VarDecl ||
-    self.prog.nodes[body].kind == FunctionDecl ||
-    self.prog.nodes[body].kind == ClassDecl else {
+  let body = self.parse_statement()
+  guard self.program.nodes[body].kind == VariableDeclaration ||
+    self.program.nodes[body].kind == FunctionDeclaration ||
+    self.program.nodes[body].kind == ClassDeclaration else {
     raise Unexpected("export declaration expected")
   }
   self.preserve_exported_names(body)
@@ -192,39 +195,40 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
 ///|
 /// Direct export declarations expose their binding spelling as the public name.
 fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
-  let node = self.prog.nodes[id]
+  let node = self.program.nodes[id]
   match node.kind {
-    PatIdent => {
-      let symbol = self.prog.refs[node.a].sym
-      self.prog.symbols[symbol] = {
-        ..self.prog.symbols[symbol],
-        flags: sym_must_not_rename,
+    PatternIdentifier => {
+      let symbol = self.program.references[node.a].symbol
+      self.program.symbols[symbol] = {
+        ..self.program.symbols[symbol],
+        flags: symbol_must_not_rename,
       }
     }
-    PatArray | PatObject =>
+    PatternArray | PatternObject =>
       for index in 0..<node.b {
-        let item = self.prog.edges[node.a + index]
+        let item = self.program.edges[node.a + index]
         if item >= 0 {
           self.preserve_exported_names(item)
         }
       }
-    PatProp => self.preserve_exported_names(node.b)
-    PatRest | PatDefault | Declarator => self.preserve_exported_names(node.a)
-    VarDecl =>
+    PatternProperty => self.preserve_exported_names(node.b)
+    PatternRest | PatternDefault | Declarator =>
+      self.preserve_exported_names(node.a)
+    VariableDeclaration =>
       for index in 0..<node.c {
-        self.preserve_exported_names(self.prog.edges[node.b + index])
+        self.preserve_exported_names(self.program.edges[node.b + index])
       }
-    FunctionDecl | ClassDecl => {
-      let reference = if node.kind == FunctionDecl {
-        self.prog.funcs[node.a].name
+    FunctionDeclaration | ClassDeclaration => {
+      let reference = if node.kind == FunctionDeclaration {
+        self.program.functions[node.a].name
       } else {
-        self.prog.classes[node.a].name
+        self.program.classes[node.a].name
       }
       if reference >= 0 {
-        let symbol = self.prog.refs[reference].sym
-        self.prog.symbols[symbol] = {
-          ..self.prog.symbols[symbol],
-          flags: sym_must_not_rename,
+        let symbol = self.program.references[reference].symbol
+        self.program.symbols[symbol] = {
+          ..self.program.symbols[symbol],
+          flags: symbol_must_not_rename,
         }
       }
     }
@@ -238,98 +242,98 @@ fn Printer::module_source(
   source : Int,
   attributes : Int,
 ) -> Unit raise ParseError {
-  self.expr(source)
+  self.expression(source)
   if attributes >= 0 {
-    self.write_str("with", true)
-    self.expr(attributes)
+    self.write_string("with", true)
+    self.expression(attributes)
   }
 }
 
 ///|
 fn Printer::module_stmt(self : Printer, index : Int) -> Unit raise ParseError {
-  match self.prog.modules[index] {
+  match self.program.modules[index] {
     Import(bindings, source, attributes) => {
-      self.write_str("import", true)
+      self.write_string("import", true)
       let mut has_prefix = false
       let mut named = false
       for binding in bindings {
         match binding {
           Default(reference) => {
-            self.write_ref(reference)
+            self.write_reference(reference)
             has_prefix = true
           }
           Namespace(reference) => {
             if has_prefix {
-              self.write_str(",", false)
+              self.write_string(",", false)
             }
-            self.write_str("*", false)
-            self.write_str("as", true)
-            self.write_ref(reference)
+            self.write_string("*", false)
+            self.write_string("as", true)
+            self.write_reference(reference)
           }
           Named(imported, reference) => {
             if named {
-              self.write_str(",", false)
+              self.write_string(",", false)
             } else {
               if has_prefix {
-                self.write_str(",", false)
+                self.write_string(",", false)
               }
-              self.write_str("{", false)
+              self.write_string("{", false)
               named = true
             }
-            self.expr(imported)
-            self.write_str("as", true)
-            self.write_ref(reference)
+            self.expression(imported)
+            self.write_string("as", true)
+            self.write_reference(reference)
           }
         }
       }
       if named {
-        self.write_str("}", false)
+        self.write_string("}", false)
       }
       if bindings.length() > 0 {
-        self.write_str("from", true)
+        self.write_string("from", true)
       }
       self.module_source(source, attributes)
-      self.write_str(";", false)
+      self.write_string(";", false)
     }
     ExportNames(specifiers, source, attributes) => {
-      self.write_str("export", true)
-      self.write_str("{", false)
+      self.write_string("export", true)
+      self.write_string("{", false)
       for index in 0..<specifiers.length() {
         if index > 0 {
-          self.write_str(",", false)
+          self.write_string(",", false)
         }
         let (source_name, exported) = specifiers[index]
-        self.expr(source_name)
-        self.write_str("as", true)
-        self.expr(exported)
+        self.expression(source_name)
+        self.write_string("as", true)
+        self.expression(exported)
       }
-      self.write_str("}", false)
+      self.write_string("}", false)
       if source >= 0 {
-        self.write_str("from", true)
+        self.write_string("from", true)
         self.module_source(source, attributes)
       }
-      self.write_str(";", false)
+      self.write_string(";", false)
     }
     ExportAll(export_name, source, attributes) => {
-      self.write_str("export", true)
-      self.write_str("*", false)
+      self.write_string("export", true)
+      self.write_string("*", false)
       if export_name >= 0 {
-        self.write_str("as", true)
-        self.expr(export_name)
+        self.write_string("as", true)
+        self.expression(export_name)
       }
-      self.write_str("from", true)
+      self.write_string("from", true)
       self.module_source(source, attributes)
-      self.write_str(";", false)
+      self.write_string(";", false)
     }
     ExportDeclaration(body) => {
-      self.write_str("export", true)
-      self.stmt(body)
+      self.write_string("export", true)
+      self.statement(body)
     }
     ExportDefault(body) => {
-      self.write_str("export", true)
-      self.write_str("default", true)
-      self.expr(body)
-      self.write_str(";", false)
+      self.write_string("export", true)
+      self.write_string("default", true)
+      self.expression(body)
+      self.write_string(";", false)
     }
   }
 }

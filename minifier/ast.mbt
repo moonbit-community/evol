@@ -1,47 +1,47 @@
 ///|
-priv enum Nk {
-  Ident
-  NumberLit
-  StringLit
-  RegexLit
-  TemplateNoSub
+priv enum NodeKind {
+  Identifier
+  NumberLiteral
+  StringLiteral
+  RegexLiteral
+  TemplateNoSubstitution
   Template
   TaggedTemplate
-  BoolLit
-  NullLit
+  BooleanLiteral
+  NullLiteral
   This
   Super
-  ArrayLit
-  ObjectLit
-  Prop
-  PatIdent
-  PatArray
-  PatObject
-  PatProp
-  PatRest
-  PatDefault
+  ArrayLiteral
+  ObjectLiteral
+  Property
+  PatternIdentifier
+  PatternArray
+  PatternObject
+  PatternProperty
+  PatternRest
+  PatternDefault
   CoverDefault
-  FunctionExpr
-  FunctionDecl
-  ArrowExpr
-  ClassExpr
-  ClassDecl
+  FunctionExpression
+  FunctionDeclaration
+  ArrowExpression
+  ClassExpression
+  ClassDeclaration
   Unary
   Update
   Binary
   Logical
-  Assign
-  Cond
+  Assignment
+  Conditional
   Call
   New
   Member
   Index
   Sequence
   Spread
-  Paren
-  ExprStmt
+  Parenthesized
+  ExpressionStatement
   Block
-  VarDecl
+  VariableDeclaration
   Declarator
   If
   For
@@ -64,58 +64,58 @@ priv enum Nk {
   Method
   ClassField
   ClassStaticBlock
-  ModuleStmt
+  ModuleStatement
 } derive(Eq, Debug)
 
 ///|
-extend Nk with @debug.Debug::{to_repr}
+extend NodeKind with @debug.Debug::{to_repr}
 
 ///|
-priv enum Op {
-  Assign
+priv enum Operator {
+  Assignment
   Add
-  Sub
-  Mul
-  Div
-  Mod
-  Exp
-  Shl
-  Shr
-  Ushr
-  Lt
-  Gt
-  Le
-  Ge
-  Eq
-  Ne
-  StrictEq
-  StrictNe
-  BitAnd
-  BitOr
-  BitXor
+  Subtract
+  Multiply
+  Divide
+  Modulo
+  Exponent
+  ShiftLeft
+  ShiftRight
+  UnsignedShiftRight
+  LessThan
+  GreaterThan
+  LessThanOrEqual
+  GreaterThanOrEqual
+  Equal
+  NotEqual
+  StrictlyEqual
+  StrictlyNotEqual
+  BitwiseAnd
+  BitwiseOr
+  BitwiseXor
   LogicalAnd
   LogicalOr
-  Nullish
+  NullishCoalescing
   In
-  Instanceof
-  Not
-  BitNot
+  InstanceOf
+  LogicalNot
+  BitwiseNot
   Plus
   Minus
-  Typeof
+  TypeOf
   Void
   Delete
   Await
   Yield
   YieldStar
-  Inc
-  Dec
+  Increment
+  Decrement
 } derive(Eq)
 
 ///|
 #valtype
 priv struct Node {
-  kind : Nk
+  kind : NodeKind
   a : Int
   b : Int
   c : Int
@@ -123,49 +123,49 @@ priv struct Node {
 }
 
 ///|
-fn Node::new(kind : Nk, a : Int, b : Int, c : Int, d : Int) -> Node {
+fn Node::new(kind : NodeKind, a : Int, b : Int, c : Int, d : Int) -> Node {
   { kind, a, b, c, d, }
 }
 
 ///|
 #valtype
-priv struct Func {
+priv struct Function {
   name : Int
-  params_off : Int
-  params_count : Int
+  parameters_offset : Int
+  parameters_count : Int
   body : Int
   flags : Int
 }
 
 ///|
-let fn_async : Int = 1
+let function_flag_async : Int = 1
 
 ///|
-let fn_generator : Int = 2
+let function_flag_generator : Int = 2
 
 ///|
-let fn_arrow : Int = 4
+let function_flag_arrow : Int = 4
 
 ///|
-let fn_expr_body : Int = 8
+let function_flag_expression_body : Int = 8
 
 ///|
 #valtype
 priv struct Class {
   name : Int
   superclass : Int
-  members_off : Int
+  members_offset : Int
   members_count : Int
 }
 
 ///|
 #valtype
-priv struct Ref {
+priv struct Reference {
   scope : Int
   name_start : Int
   name_end : Int
   name : Int
-  sym : Int
+  symbol : Int
 }
 
 ///|
@@ -180,7 +180,7 @@ priv struct Symbol {
 }
 
 ///|
-let sym_must_not_rename : Int = 1
+let symbol_must_not_rename : Int = 1
 
 ///|
 #valtype
@@ -215,16 +215,16 @@ let scope_transparent : Int = 7
 
 ///|
 priv struct Program {
-  src : String
+  source : String
   nodes : Array[Node]
   edges : Array[Int]
-  refs : Array[Ref]
+  references : Array[Reference]
   symbols : Array[Symbol]
   scopes : Array[Scope]
   scope_members : Array[Map[Int, Int]]
-  funcs : Array[Func]
+  functions : Array[Function]
   classes : Array[Class]
-  ops : Array[Op]
+  operators : Array[Operator]
   modules : Array[ModuleStatement]
   mut root : Int
   preserved_names : Map[Int, Bool]
@@ -236,18 +236,18 @@ priv struct Program {
 }
 
 ///|
-fn Program::new(src : String) -> Program {
+fn Program::new(source : String) -> Program {
   let p : Program = {
-    src,
+    source,
     nodes: [],
     edges: [],
-    refs: [],
+    references: [],
     symbols: [],
     scopes: [],
     scope_members: [],
-    funcs: [],
+    functions: [],
     classes: [],
-    ops: [],
+    operators: [],
     modules: [],
     root: -1,
     preserved_names: {},
@@ -268,7 +268,7 @@ fn Program::new(src : String) -> Program {
 ///|
 fn Program::node(
   self : Program,
-  kind : Nk,
+  kind : NodeKind,
   a : Int,
   b : Int,
   c : Int,
@@ -279,18 +279,18 @@ fn Program::node(
 }
 
 ///|
-fn Program::op(self : Program, t : Op) -> Int {
-  self.ops.push(t)
-  self.ops.length() - 1
+fn Program::add_operator(self : Program, t : Operator) -> Int {
+  self.operators.push(t)
+  self.operators.length() - 1
 }
 
 ///|
-fn Program::edge_list(self : Program, xs : Array[Int]) -> (Int, Int) {
-  let off = self.edges.length()
-  for x in xs {
+fn Program::edge_list(self : Program, items : Array[Int]) -> (Int, Int) {
+  let offset = self.edges.length()
+  for x in items {
     self.edges.push(x)
   }
-  (off, xs.length())
+  (offset, items.length())
 }
 
 ///|
@@ -361,13 +361,13 @@ fn Program::identifier(
   start : Int,
   end : Int,
 ) -> Int raise ParseError {
-  let spelling = self.src[start:end]
+  let spelling = self.source[start:end]
   if self.identifier_ids.get(spelling) is Some(id) {
     return id
   }
   let escaped = spelling.contains_code_unit('\\')
   let name = if escaped {
-    identifier_name(self.src, start, end)
+    identifier_name(self.source, start, end)
   } else {
     spelling.to_owned()
   }

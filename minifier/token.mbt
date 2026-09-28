@@ -1,72 +1,72 @@
 ///|
-priv enum Tok {
-  Eof
-  Ident
+priv enum Token {
+  EndOfFile
+  Identifier
   Number
-  Str
+  StringLiteral
   Regex
-  TmplNoSub
-  TmplHead
-  TmplMiddle
-  TmplTail
-  LParen
-  RParen
-  LBracket
-  RBracket
-  LBrace
-  RBrace
+  TemplateNoSubstitution
+  TemplateHead
+  TemplateMiddle
+  TemplateTail
+  LeftParenthesis
+  RightParenthesis
+  LeftBracket
+  RightBracket
+  LeftBrace
+  RightBrace
   Semicolon
   Comma
   Dot
   Ellipsis
   Question
-  QuestionDot
+  OptionalChaining
   Colon
   Arrow
-  Assign
-  AddAssign
-  SubAssign
-  MulAssign
-  DivAssign
-  ModAssign
-  ExpAssign
-  ShlAssign
-  ShrAssign
-  UshrAssign
-  BitAndAssign
-  BitOrAssign
-  BitXorAssign
-  LogicalAndAssign
-  LogicalOrAssign
-  NullishAssign
+  Assignment
+  AdditionAssignment
+  SubtractionAssignment
+  MultiplicationAssignment
+  DivisionAssignment
+  ModuloAssignment
+  ExponentiationAssignment
+  LeftShiftAssignment
+  RightShiftAssignment
+  UnsignedRightShiftAssignment
+  BitwiseAndAssignment
+  BitwiseOrAssignment
+  BitwiseXorAssignment
+  LogicalAndAssignment
+  LogicalOrAssignment
+  NullishCoalescingAssignment
   Plus
   Minus
-  Star
+  Asterisk
   Slash
   Percent
-  StarStar
-  PlusPlus
-  MinusMinus
-  Shl
-  Shr
-  Ushr
-  BitAnd
-  BitOr
-  BitXor
-  Not
+  ExponentiationOperator
+  Increment
+  Decrement
+  ShiftLeft
+  ShiftRight
+  UnsignedShiftRight
+  BitwiseAnd
+  BitwiseOr
+  BitwiseXor
+  LogicalNot
   Tilde
   LogicalAnd
   LogicalOr
-  Nullish
-  Lt
-  Gt
-  Le
-  Ge
-  Eq
-  Ne
-  StrictEq
-  StrictNe
+  NullishCoalescing
+  LessThan
+  GreaterThan
+  LessThanOrEqual
+  GreaterThanOrEqual
+  Equal
+  NotEqual
+  StrictlyEqual
+  StrictlyNotEqual
 } derive(Eq, Debug)
 
 ///|
-extend Tok with @debug.Debug::{to_repr}
+extend Token with @debug.Debug::{to_repr}

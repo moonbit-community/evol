@@ -17,14 +17,14 @@ priv struct ClassKey {
 
 ///|
 fn Parser::class_key(self : Parser) -> ClassKey raise ParseError {
-  let computed = self.lx.tok == LBracket
-  let prefix = if self.lx.is_kw("static") {
+  let computed = self.lexer.token == LeftBracket
+  let prefix = if self.lexer.is_keyword("static") {
     Static
-  } else if self.lx.is_kw("get") {
+  } else if self.lexer.is_keyword("get") {
     Getter
-  } else if self.lx.is_kw("set") {
+  } else if self.lexer.is_keyword("set") {
     Setter
-  } else if self.lx.is_kw("async") {
+  } else if self.lexer.is_keyword("async") {
     Async
   } else {
     Plain
@@ -48,7 +48,7 @@ fn Parser::class_method(
   kind : Int,
 ) -> Int raise ParseError {
   let function = self.parse_function_rest(-1, is_async, is_generator, false)
-  self.prog.node(Method, key.node, function, kind, key.flags(is_static))
+  self.program.node(Method, key.node, function, kind, key.flags(is_static))
 }
 
 ///|
@@ -59,45 +59,45 @@ fn Parser::parse_class_member(
   members : Array[Int],
 ) -> Unit raise ParseError {
   let mut is_static = false
-  let mut is_generator = if self.eat(Star) { 1 } else { 0 }
+  let mut is_generator = if self.eat(Asterisk) { 1 } else { 0 }
   let mut key = self.class_key()
   while true {
-    let next = self.lx.tok
+    let next = self.lexer.token
     if is_generator == 0 &&
       !is_static &&
       key.prefix == Static &&
-      next != LParen &&
-      next != Assign &&
+      next != LeftParenthesis &&
+      next != Assignment &&
       next != Semicolon &&
-      next != RBrace {
+      next != RightBrace {
       is_static = true
-      if next == LBrace {
+      if next == LeftBrace {
         let outer = self.scope
-        self.scope = self.prog.push_scope(outer, scope_function)
+        self.scope = self.program.push_scope(outer, scope_function)
         let body = self.parse_block()
         self.scope = outer
-        members.push(self.prog.node(ClassStaticBlock, body, 0, 0, 0))
+        members.push(self.program.node(ClassStaticBlock, body, 0, 0, 0))
         return
       }
-      is_generator = if self.eat(Star) { 1 } else { 0 }
+      is_generator = if self.eat(Asterisk) { 1 } else { 0 }
       key = self.class_key()
       continue
     }
-    if is_generator != 0 || next == LParen {
+    if is_generator != 0 || next == LeftParenthesis {
       members.push(self.class_method(key, is_static, 0, is_generator, 0))
       return
     }
-    let property_follows = next == Ident ||
-      next == Str ||
+    let property_follows = next == Identifier ||
+      next == StringLiteral ||
       next == Number ||
-      next == LBracket
+      next == LeftBracket
     let accessor = key.prefix == Getter || key.prefix == Setter
-    let asynchronous = key.prefix == Async && !self.lx.newline_before
+    let asynchronous = key.prefix == Async && !self.lexer.newline_before
     if (accessor && property_follows) ||
-      (asynchronous && (property_follows || next == Star)) {
-      let generator = if asynchronous && self.eat(Star) { 1 } else { 0 }
+      (asynchronous && (property_follows || next == Asterisk)) {
+      let generator = if asynchronous && self.eat(Asterisk) { 1 } else { 0 }
       let following = self.class_key()
-      if self.lx.tok == LParen {
+      if self.lexer.token == LeftParenthesis {
         let kind = if key.prefix == Getter {
           1
         } else if key.prefix == Setter {
@@ -122,15 +122,25 @@ fn Parser::parse_class_member(
       }
       raise Unexpected("method parameter list expected")
     }
-    let initializer = if self.eat(Assign) { self.parse_assign_in() } else { -1 }
-    guard self.lx.tok == Semicolon ||
-      self.lx.tok == RBrace ||
-      self.lx.newline_before else {
+    let initializer = if self.eat(Assignment) {
+      self.parse_assignment_allowing_in()
+    } else {
+      -1
+    }
+    guard self.lexer.token == Semicolon ||
+      self.lexer.token == RightBrace ||
+      self.lexer.newline_before else {
       raise Unexpected("class field terminator expected")
     }
-    self.eat_semi()
+    self.eat_semicolon()
     members.push(
-      self.prog.node(ClassField, key.node, initializer, 0, key.flags(is_static)),
+      self.program.node(
+        ClassField,
+        key.node,
+        initializer,
+        0,
+        key.flags(is_static),
+      ),
     )
     return
   }

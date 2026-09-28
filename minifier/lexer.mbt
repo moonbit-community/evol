@@ -1,19 +1,20 @@
 ///|
-fn is_line_term(c : UInt16) -> Bool {
+fn is_line_terminator(c : UInt16) -> Bool {
   c == '\n' || c == '\r' || c == 0x2028 || c == 0x2029
 }
 
 ///|
-fn is_ws(c : UInt16) -> Bool {
+fn is_whitespace(c : UInt16) -> Bool {
   if c < 0x80 {
     c == ' ' || c == '\t' || c == 0x0B || c == 0x0C
   } else {
-    c == 0xFEFF || c.to_int().to_char().map_or(false, ch => ch.is_whitespace())
+    c == 0xFEFF ||
+    c.to_int().to_char().map_or(false, character => character.is_whitespace())
   }
 }
 
 ///|
-fn is_id_start(c : UInt16) -> Bool {
+fn is_identifier_start(c : UInt16) -> Bool {
   c == '$' ||
   c == '_' ||
   c == '#' ||
@@ -23,8 +24,8 @@ fn is_id_start(c : UInt16) -> Bool {
 }
 
 ///|
-fn is_id_continue(c : UInt16) -> Bool {
-  is_id_start(c) || (c >= '0' && c <= '9')
+fn is_identifier_continue(c : UInt16) -> Bool {
+  is_identifier_start(c) || (c >= '0' && c <= '9')
 }
 
 ///|
@@ -44,9 +45,9 @@ fn is_oct(c : UInt16) -> Bool {
 
 ///|
 priv struct Lexer {
-  src : String
-  mut pos : Int
-  mut tok : Tok
+  source : String
+  mut position : Int
+  mut token : Token
   mut start : Int
   mut end : Int
   mut newline_before : Bool
@@ -55,11 +56,11 @@ priv struct Lexer {
 }
 
 ///|
-fn Lexer::new(src : String) -> Lexer {
+fn Lexer::new(source : String) -> Lexer {
   {
-    src,
-    pos: 0,
-    tok: Eof,
+    source,
+    position: 0,
+    token: EndOfFile,
     start: 0,
     end: 0,
     newline_before: false,
@@ -71,8 +72,8 @@ fn Lexer::new(src : String) -> Lexer {
 ///|
 #valtype
 priv struct LexerSnapshot {
-  pos : Int
-  tok : Tok
+  position : Int
+  token : Token
   start : Int
   end : Int
   newline_before : Bool
@@ -83,8 +84,8 @@ priv struct LexerSnapshot {
 ///|
 fn Lexer::snapshot(self : Lexer) -> LexerSnapshot {
   {
-    pos: self.pos,
-    tok: self.tok,
+    position: self.position,
+    token: self.token,
     start: self.start,
     end: self.end,
     newline_before: self.newline_before,
@@ -95,8 +96,8 @@ fn Lexer::snapshot(self : Lexer) -> LexerSnapshot {
 
 ///|
 fn Lexer::restore(self : Lexer, other : LexerSnapshot) -> Unit {
-  self.pos = other.pos
-  self.tok = other.tok
+  self.position = other.position
+  self.token = other.token
   self.start = other.start
   self.end = other.end
   self.newline_before = other.newline_before
@@ -105,42 +106,42 @@ fn Lexer::restore(self : Lexer, other : LexerSnapshot) -> Unit {
 }
 
 ///|
-fn Lexer::ch(self : Lexer) -> UInt16 {
-  self.ch_at(0)
+fn Lexer::character(self : Lexer) -> UInt16 {
+  self.character_at(0)
 }
 
 ///|
-fn Lexer::ch_at(self : Lexer, off : Int) -> UInt16 {
-  let i = self.pos + off
-  if i < 0 || i >= self.src.length() {
+fn Lexer::character_at(self : Lexer, offset : Int) -> UInt16 {
+  let i = self.position + offset
+  if i < 0 || i >= self.source.length() {
     0
   } else {
-    self.src[i]
+    self.source[i]
   }
 }
 
 ///|
-fn Lexer::peek(self : Lexer, off : Int) -> Int {
-  let i = self.pos + off
-  if i < 0 || i >= self.src.length() {
+fn Lexer::peek(self : Lexer, offset : Int) -> Int {
+  let i = self.position + offset
+  if i < 0 || i >= self.source.length() {
     -1
   } else {
-    self.src[i].to_int()
+    self.source[i].to_int()
   }
 }
 
 ///|
-fn Lexer::is_kw(self : Lexer, kw : String) -> Bool {
-  if self.tok != Ident {
+fn Lexer::is_keyword(self : Lexer, keyword : String) -> Bool {
+  if self.token != Identifier {
     return false
   }
-  let n = kw.length()
+  let n = keyword.length()
   if self.end - self.start != n {
     return false
   }
   let mut i = 0
   while i < n {
-    if self.src[self.start + i] != kw[i] {
+    if self.source[self.start + i] != keyword[i] {
       return false
     }
     i = i + 1
@@ -150,45 +151,48 @@ fn Lexer::is_kw(self : Lexer, kw : String) -> Bool {
 
 ///|
 fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
-  let len = self.src.length()
-  if self.pos == 0 && len >= 2 && self.src[0] == '#' && self.src[1] == '!' {
-    while self.pos < len && !is_line_term(self.ch()) {
-      self.pos = self.pos + 1
+  let length = self.source.length()
+  if self.position == 0 &&
+    length >= 2 &&
+    self.source[0] == '#' &&
+    self.source[1] == '!' {
+    while self.position < length && !is_line_terminator(self.character()) {
+      self.position = self.position + 1
     }
   }
-  while self.pos < len {
-    let c = self.ch()
-    if is_line_term(c) {
+  while self.position < length {
+    let c = self.character()
+    if is_line_terminator(c) {
       self.newline_before = true
-      self.pos = self.pos + 1
+      self.position = self.position + 1
       continue
     }
-    if is_ws(c) {
-      self.pos = self.pos + 1
+    if is_whitespace(c) {
+      self.position = self.position + 1
       continue
     }
     if c == '/' {
       let d = self.peek(1)
       if d == 47 {
-        self.pos = self.pos + 2
-        while self.pos < len && !is_line_term(self.ch()) {
-          self.pos = self.pos + 1
+        self.position = self.position + 2
+        while self.position < length && !is_line_terminator(self.character()) {
+          self.position = self.position + 1
         }
         continue
       }
       if d == 42 {
-        self.pos = self.pos + 2
+        self.position = self.position + 2
         let mut closed = false
-        while self.pos < len {
-          if self.src[self.pos] == '*' && self.peek(1) == 47 {
-            self.pos = self.pos + 2
+        while self.position < length {
+          if self.source[self.position] == '*' && self.peek(1) == 47 {
+            self.position = self.position + 2
             closed = true
             break
           }
-          if is_line_term(self.ch()) {
+          if is_line_terminator(self.character()) {
             self.newline_before = true
           }
-          self.pos = self.pos + 1
+          self.position = self.position + 1
         }
         guard closed else { raise Unexpected("unterminated comment") }
         continue
@@ -199,46 +203,46 @@ fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
 }
 
 ///|
-fn Lexer::scan_ident(self : Lexer) -> Unit raise ParseError {
-  if self.ch() == '#' {
-    self.pos += 1
+fn Lexer::scan_identifier(self : Lexer) -> Unit raise ParseError {
+  if self.character() == '#' {
+    self.position += 1
   }
   let mut first = true
-  while self.pos < self.src.length() {
-    if self.ch() == '\\' {
-      let (ch, end) = identifier_escape(self.src, self.pos)
-      let code = ch.to_int()
+  while self.position < self.source.length() {
+    if self.character() == '\\' {
+      let (character, end) = identifier_escape(self.source, self.position)
+      let code = character.to_int()
       let valid = code >= 0x80 ||
         code == 36 ||
         code == 95 ||
         (code >= 65 && code <= 90) ||
         (code >= 97 && code <= 122) ||
         (!first && code >= 48 && code <= 57)
-      guard valid && !ch.is_whitespace() else {
+      guard valid && !character.is_whitespace() else {
         raise Unexpected("invalid identifier escape")
       }
-      self.pos = end
-    } else if is_id_continue(self.ch()) &&
-      !is_ws(self.ch()) &&
-      !is_line_term(self.ch()) {
-      self.pos += 1
+      self.position = end
+    } else if is_identifier_continue(self.character()) &&
+      !is_whitespace(self.character()) &&
+      !is_line_terminator(self.character()) {
+      self.position += 1
     } else {
       break
     }
     first = false
   }
   guard !first else { raise Unexpected("identifier expected") }
-  self.tok = Ident
-  self.end = self.pos
+  self.token = Identifier
+  self.end = self.position
 }
 
 ///|
 fn Lexer::scan_digits(self : Lexer, is_valid : (UInt16) -> Bool) -> Unit {
-  let len = self.src.length()
-  while self.pos < len {
-    let c = self.ch()
+  let length = self.source.length()
+  while self.position < length {
+    let c = self.character()
     if is_valid(c) || c == '_' {
-      self.pos = self.pos + 1
+      self.position = self.position + 1
     } else {
       break
     }
@@ -247,39 +251,39 @@ fn Lexer::scan_digits(self : Lexer, is_valid : (UInt16) -> Bool) -> Unit {
 
 ///|
 fn Lexer::scan_number(self : Lexer) -> Unit {
-  let c = self.ch()
+  let c = self.character()
   if c == '0' {
-    let d = self.ch_at(1)
+    let d = self.character_at(1)
     if d == 'x' || d == 'X' {
-      self.pos = self.pos + 2
+      self.position = self.position + 2
       self.scan_digits(is_hex)
       self.finish_number()
       return
     }
     if d == 'b' || d == 'B' {
-      self.pos = self.pos + 2
+      self.position = self.position + 2
       self.scan_digits(x => x == '0' || x == '1')
       self.finish_number()
       return
     }
     if d == 'o' || d == 'O' {
-      self.pos = self.pos + 2
+      self.position = self.position + 2
       self.scan_digits(is_oct)
       self.finish_number()
       return
     }
   }
   self.scan_digits(is_digit)
-  if self.ch() == '.' {
-    self.pos = self.pos + 1
+  if self.character() == '.' {
+    self.position = self.position + 1
     self.scan_digits(is_digit)
   }
-  let e = self.ch()
+  let e = self.character()
   if e == 'e' || e == 'E' {
-    self.pos = self.pos + 1
-    let s = self.ch()
+    self.position = self.position + 1
+    let s = self.character()
     if s == '+' || s == '-' {
-      self.pos = self.pos + 1
+      self.position = self.position + 1
     }
     self.scan_digits(is_digit)
   }
@@ -288,37 +292,37 @@ fn Lexer::scan_number(self : Lexer) -> Unit {
 
 ///|
 fn Lexer::finish_number(self : Lexer) -> Unit {
-  if self.ch() == 'n' {
-    self.pos = self.pos + 1
+  if self.character() == 'n' {
+    self.position = self.position + 1
   }
-  self.tok = Number
-  self.end = self.pos
+  self.token = Number
+  self.end = self.position
 }
 
 ///|
 fn Lexer::scan_string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
-  self.pos += 1
-  while self.pos < self.src.length() {
-    let c = self.ch()
+  self.position += 1
+  while self.position < self.source.length() {
+    let c = self.character()
     if c == quote {
-      self.pos += 1
-      self.tok = Str
-      self.end = self.pos
+      self.position += 1
+      self.token = StringLiteral
+      self.end = self.position
       return
     }
     guard c != '\n' && c != '\r' else {
       raise Unexpected("newline in string literal")
     }
     if c == '\\' {
-      guard self.pos + 1 < self.src.length() else {
+      guard self.position + 1 < self.source.length() else {
         raise Unexpected("unterminated string escape")
       }
-      self.pos += 2
-      if self.src[self.pos - 1] == '\r' && self.ch() == '\n' {
-        self.pos += 1
+      self.position += 2
+      if self.source[self.position - 1] == '\r' && self.character() == '\n' {
+        self.position += 1
       }
     } else {
-      self.pos += 1
+      self.position += 1
     }
   }
   raise Unexpected("unterminated string literal")
@@ -326,29 +330,30 @@ fn Lexer::scan_string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
 
 ///|
 fn Lexer::scan_regex(self : Lexer) -> Unit raise ParseError {
-  self.pos += 1
+  self.position += 1
   let mut in_class = false
-  while self.pos < self.src.length() {
-    let c = self.ch()
-    guard !is_line_term(c) else {
+  while self.position < self.source.length() {
+    let c = self.character()
+    guard !is_line_terminator(c) else {
       raise Unexpected("newline in regular expression")
     }
     if c == '\\' {
-      guard self.pos + 1 < self.src.length() && !is_line_term(self.ch_at(1)) else {
+      guard self.position + 1 < self.source.length() &&
+        !is_line_terminator(self.character_at(1)) else {
         raise Unexpected("unterminated regular expression escape")
       }
-      self.pos += 2
+      self.position += 2
       continue
     }
     if c == '/' && !in_class {
-      self.pos += 1
-      while is_id_continue(self.ch()) &&
-            !is_ws(self.ch()) &&
-            !is_line_term(self.ch()) {
-        self.pos += 1
+      self.position += 1
+      while is_identifier_continue(self.character()) &&
+            !is_whitespace(self.character()) &&
+            !is_line_terminator(self.character()) {
+        self.position += 1
       }
-      self.tok = Regex
-      self.end = self.pos
+      self.token = Regex
+      self.end = self.position
       return
     }
     if c == '[' {
@@ -357,7 +362,7 @@ fn Lexer::scan_regex(self : Lexer) -> Unit raise ParseError {
     if c == ']' {
       in_class = false
     }
-    self.pos += 1
+    self.position += 1
   }
   raise Unexpected("unterminated regular expression")
 }
@@ -367,41 +372,41 @@ fn Lexer::scan_template_chunk(
   self : Lexer,
   is_start : Bool,
 ) -> Unit raise ParseError {
-  let len = self.src.length()
-  let begin = self.pos
-  while self.pos < len {
-    let c = self.src[self.pos]
+  let length = self.source.length()
+  let begin = self.position
+  while self.position < length {
+    let c = self.source[self.position]
     if c == '\\' {
-      guard self.pos + 1 < len else {
+      guard self.position + 1 < length else {
         raise Unexpected("unterminated template escape")
       }
-      self.pos += 2
+      self.position += 2
       continue
     }
     if c == '`' {
       self.quasi_start = begin
-      self.quasi_end = self.pos
-      self.pos = self.pos + 1
-      self.tok = if is_start { TmplNoSub } else { TmplTail }
-      self.end = self.pos
+      self.quasi_end = self.position
+      self.position = self.position + 1
+      self.token = if is_start { TemplateNoSubstitution } else { TemplateTail }
+      self.end = self.position
       return
     }
     if c == '$' && self.peek(1) == 123 {
       self.quasi_start = begin
-      self.quasi_end = self.pos
-      self.pos = self.pos + 2
-      self.tok = if is_start { TmplHead } else { TmplMiddle }
-      self.end = self.pos
+      self.quasi_end = self.position
+      self.position = self.position + 2
+      self.token = if is_start { TemplateHead } else { TemplateMiddle }
+      self.end = self.position
       return
     }
-    self.pos = self.pos + 1
+    self.position = self.position + 1
   }
   raise Unexpected("unterminated template literal")
 }
 
 ///|
 fn Lexer::rescan_template_continue(self : Lexer) -> Unit raise ParseError {
-  self.start = self.pos
+  self.start = self.position
   self.scan_template_chunk(false)
 }
 
@@ -409,23 +414,23 @@ fn Lexer::rescan_template_continue(self : Lexer) -> Unit raise ParseError {
 fn Lexer::next(self : Lexer) -> Unit raise ParseError {
   self.newline_before = false
   self.skip_trivia()
-  self.start = self.pos
-  let len = self.src.length()
-  if self.pos >= len {
-    self.tok = Eof
-    self.end = self.pos
+  self.start = self.position
+  let length = self.source.length()
+  if self.position >= length {
+    self.token = EndOfFile
+    self.end = self.position
     return
   }
-  let c = self.ch()
-  if is_id_start(c) || c == '\\' {
-    self.scan_ident()
+  let c = self.character()
+  if is_identifier_start(c) || c == '\\' {
+    self.scan_identifier()
     return
   }
   if is_digit(c) {
     self.scan_number()
     return
   }
-  if c == '.' && is_digit(self.ch_at(1)) {
+  if c == '.' && is_digit(self.character_at(1)) {
     self.scan_number()
     return
   }
@@ -434,283 +439,288 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
     return
   }
   if c == '`' {
-    self.pos = self.pos + 1
+    self.position = self.position + 1
     self.scan_template_chunk(true)
     return
   }
   if c == '/' {
     let d = self.peek(1)
     if d == 61 {
-      self.pos = self.pos + 2
-      self.tok = DivAssign
-      self.end = self.pos
+      self.position = self.position + 2
+      self.token = DivisionAssignment
+      self.end = self.position
       return
     }
-    self.pos = self.pos + 1
-    self.tok = Slash
-    self.end = self.pos
+    self.position = self.position + 1
+    self.token = Slash
+    self.end = self.position
     return
   }
-  self.scan_punct(c.to_int())
+  self.scan_punctuation(c.to_int())
 }
 
 ///|
-fn Lexer::scan_punct(self : Lexer, c : Int) -> Unit raise ParseError {
+fn Lexer::scan_punctuation(self : Lexer, c : Int) -> Unit raise ParseError {
   match c {
     40 => {
-      self.pos = self.pos + 1
-      self.tok = LParen
+      self.position = self.position + 1
+      self.token = LeftParenthesis
     }
     41 => {
-      self.pos = self.pos + 1
-      self.tok = RParen
+      self.position = self.position + 1
+      self.token = RightParenthesis
     }
     91 => {
-      self.pos = self.pos + 1
-      self.tok = LBracket
+      self.position = self.position + 1
+      self.token = LeftBracket
     }
     93 => {
-      self.pos = self.pos + 1
-      self.tok = RBracket
+      self.position = self.position + 1
+      self.token = RightBracket
     }
     123 => {
-      self.pos = self.pos + 1
-      self.tok = LBrace
+      self.position = self.position + 1
+      self.token = LeftBrace
     }
     125 => {
-      self.pos = self.pos + 1
-      self.tok = RBrace
+      self.position = self.position + 1
+      self.token = RightBrace
     }
     59 => {
-      self.pos = self.pos + 1
-      self.tok = Semicolon
+      self.position = self.position + 1
+      self.token = Semicolon
     }
     44 => {
-      self.pos = self.pos + 1
-      self.tok = Comma
+      self.position = self.position + 1
+      self.token = Comma
     }
     58 => {
-      self.pos = self.pos + 1
-      self.tok = Colon
+      self.position = self.position + 1
+      self.token = Colon
     }
     126 => {
-      self.pos = self.pos + 1
-      self.tok = Tilde
+      self.position = self.position + 1
+      self.token = Tilde
     }
     63 =>
-      if self.peek(1) == 46 && !is_digit(self.ch_at(2)) {
-        self.pos = self.pos + 2
-        self.tok = QuestionDot
+      if self.peek(1) == 46 && !is_digit(self.character_at(2)) {
+        self.position = self.position + 2
+        self.token = OptionalChaining
       } else if self.peek(1) == 63 && self.peek(2) == 61 {
-        self.pos = self.pos + 3
-        self.tok = NullishAssign
+        self.position = self.position + 3
+        self.token = NullishCoalescingAssignment
       } else if self.peek(1) == 63 {
-        self.pos = self.pos + 2
-        self.tok = Nullish
+        self.position = self.position + 2
+        self.token = NullishCoalescing
       } else {
-        self.pos = self.pos + 1
-        self.tok = Question
+        self.position = self.position + 1
+        self.token = Question
       }
     46 =>
       if self.peek(1) == 46 && self.peek(2) == 46 {
-        self.pos = self.pos + 3
-        self.tok = Ellipsis
+        self.position = self.position + 3
+        self.token = Ellipsis
       } else {
-        self.pos = self.pos + 1
-        self.tok = Dot
+        self.position = self.position + 1
+        self.token = Dot
       }
     61 =>
       if self.peek(1) == 62 {
-        self.pos = self.pos + 2
-        self.tok = Arrow
+        self.position = self.position + 2
+        self.token = Arrow
       } else if self.peek(1) == 61 && self.peek(2) == 61 {
-        self.pos = self.pos + 3
-        self.tok = StrictEq
+        self.position = self.position + 3
+        self.token = StrictlyEqual
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = Eq
+        self.position = self.position + 2
+        self.token = Equal
       } else {
-        self.pos = self.pos + 1
-        self.tok = Assign
+        self.position = self.position + 1
+        self.token = Assignment
       }
     33 =>
       if self.peek(1) == 61 && self.peek(2) == 61 {
-        self.pos = self.pos + 3
-        self.tok = StrictNe
+        self.position = self.position + 3
+        self.token = StrictlyNotEqual
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = Ne
+        self.position = self.position + 2
+        self.token = NotEqual
       } else {
-        self.pos = self.pos + 1
-        self.tok = Not
+        self.position = self.position + 1
+        self.token = LogicalNot
       }
     60 =>
       if self.peek(1) == 60 && self.peek(2) == 61 {
-        self.pos = self.pos + 3
-        self.tok = ShlAssign
+        self.position = self.position + 3
+        self.token = LeftShiftAssignment
       } else if self.peek(1) == 60 {
-        self.pos = self.pos + 2
-        self.tok = Shl
+        self.position = self.position + 2
+        self.token = ShiftLeft
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = Le
+        self.position = self.position + 2
+        self.token = LessThanOrEqual
       } else {
-        self.pos = self.pos + 1
-        self.tok = Lt
+        self.position = self.position + 1
+        self.token = LessThan
       }
     62 =>
       if self.peek(1) == 62 && self.peek(2) == 62 && self.peek(3) == 61 {
-        self.pos = self.pos + 4
-        self.tok = UshrAssign
+        self.position = self.position + 4
+        self.token = UnsignedRightShiftAssignment
       } else if self.peek(1) == 62 && self.peek(2) == 62 {
-        self.pos = self.pos + 3
-        self.tok = Ushr
+        self.position = self.position + 3
+        self.token = UnsignedShiftRight
       } else if self.peek(1) == 62 && self.peek(2) == 61 {
-        self.pos = self.pos + 3
-        self.tok = ShrAssign
+        self.position = self.position + 3
+        self.token = RightShiftAssignment
       } else if self.peek(1) == 62 {
-        self.pos = self.pos + 2
-        self.tok = Shr
+        self.position = self.position + 2
+        self.token = ShiftRight
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = Ge
+        self.position = self.position + 2
+        self.token = GreaterThanOrEqual
       } else {
-        self.pos = self.pos + 1
-        self.tok = Gt
+        self.position = self.position + 1
+        self.token = GreaterThan
       }
     38 =>
       if self.peek(1) == 38 && self.peek(2) == 61 {
-        self.pos = self.pos + 3
-        self.tok = LogicalAndAssign
+        self.position = self.position + 3
+        self.token = LogicalAndAssignment
       } else if self.peek(1) == 38 {
-        self.pos = self.pos + 2
-        self.tok = LogicalAnd
+        self.position = self.position + 2
+        self.token = LogicalAnd
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = BitAndAssign
+        self.position = self.position + 2
+        self.token = BitwiseAndAssignment
       } else {
-        self.pos = self.pos + 1
-        self.tok = BitAnd
+        self.position = self.position + 1
+        self.token = BitwiseAnd
       }
     124 =>
       if self.peek(1) == 124 && self.peek(2) == 61 {
-        self.pos = self.pos + 3
-        self.tok = LogicalOrAssign
+        self.position = self.position + 3
+        self.token = LogicalOrAssignment
       } else if self.peek(1) == 124 {
-        self.pos = self.pos + 2
-        self.tok = LogicalOr
+        self.position = self.position + 2
+        self.token = LogicalOr
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = BitOrAssign
+        self.position = self.position + 2
+        self.token = BitwiseOrAssignment
       } else {
-        self.pos = self.pos + 1
-        self.tok = BitOr
+        self.position = self.position + 1
+        self.token = BitwiseOr
       }
     94 =>
       if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = BitXorAssign
+        self.position = self.position + 2
+        self.token = BitwiseXorAssignment
       } else {
-        self.pos = self.pos + 1
-        self.tok = BitXor
+        self.position = self.position + 1
+        self.token = BitwiseXor
       }
     43 =>
       if self.peek(1) == 43 {
-        self.pos = self.pos + 2
-        self.tok = PlusPlus
+        self.position = self.position + 2
+        self.token = Increment
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = AddAssign
+        self.position = self.position + 2
+        self.token = AdditionAssignment
       } else {
-        self.pos = self.pos + 1
-        self.tok = Plus
+        self.position = self.position + 1
+        self.token = Plus
       }
     45 =>
       if self.peek(1) == 45 {
-        self.pos = self.pos + 2
-        self.tok = MinusMinus
+        self.position = self.position + 2
+        self.token = Decrement
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = SubAssign
+        self.position = self.position + 2
+        self.token = SubtractionAssignment
       } else {
-        self.pos = self.pos + 1
-        self.tok = Minus
+        self.position = self.position + 1
+        self.token = Minus
       }
     42 =>
       if self.peek(1) == 42 && self.peek(2) == 61 {
-        self.pos = self.pos + 3
-        self.tok = ExpAssign
+        self.position = self.position + 3
+        self.token = ExponentiationAssignment
       } else if self.peek(1) == 42 {
-        self.pos = self.pos + 2
-        self.tok = StarStar
+        self.position = self.position + 2
+        self.token = ExponentiationOperator
       } else if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = MulAssign
+        self.position = self.position + 2
+        self.token = MultiplicationAssignment
       } else {
-        self.pos = self.pos + 1
-        self.tok = Star
+        self.position = self.position + 1
+        self.token = Asterisk
       }
     37 =>
       if self.peek(1) == 61 {
-        self.pos = self.pos + 2
-        self.tok = ModAssign
+        self.position = self.position + 2
+        self.token = ModuloAssignment
       } else {
-        self.pos = self.pos + 1
-        self.tok = Percent
+        self.position = self.position + 1
+        self.token = Percent
       }
-    _ => raise Unexpected("unexpected character at offset \{self.pos}")
+    _ => raise Unexpected("unexpected character at offset \{self.position}")
   }
-  self.end = self.pos
+  self.end = self.position
 }
 
 ///|
-fn identifier_escape(src : String, start : Int) -> (Char, Int) raise ParseError {
-  guard start + 2 < src.length() && src[start + 1] == 'u' else {
+fn identifier_escape(
+  source : String,
+  start : Int,
+) -> (Char, Int) raise ParseError {
+  guard start + 2 < source.length() && source[start + 1] == 'u' else {
     raise Unexpected("expected Unicode identifier escape")
   }
-  let braced = src[start + 2] == '{'
+  let braced = source[start + 2] == '{'
   let begin = start + (if braced { 3 } else { 2 })
-  let (value, end) = for value = 0, pos = begin {
-    if braced && pos < src.length() && src[pos] == '}' {
-      guard pos > begin else { raise Unexpected("empty Unicode escape") }
-      break (value, pos + 1)
+  let (value, end) = for value = 0, position = begin {
+    if braced && position < source.length() && source[position] == '}' {
+      guard position > begin else { raise Unexpected("empty Unicode escape") }
+      break (value, position + 1)
     }
-    if !braced && pos == begin + 4 {
-      break (value, pos)
+    if !braced && position == begin + 4 {
+      break (value, position)
     }
-    guard pos < src.length() && is_hex(src[pos]) && value <= 0x10FFFF / 16 else {
+    guard position < source.length() &&
+      is_hex(source[position]) &&
+      value <= 0x10FFFF / 16 else {
       raise Unexpected("invalid Unicode escape")
     }
-    let c = src[pos].to_int()
+    let c = source[position].to_int()
     let digit = if c <= 57 { c - 48 } else if c <= 70 { c - 55 } else { c - 87 }
-    continue value * 16 + digit, pos + 1
+    continue value * 16 + digit, position + 1
   }
-  guard value.to_char() is Some(ch) else {
+  guard value.to_char() is Some(character) else {
     raise Unexpected("invalid Unicode code point")
   }
-  (ch, end)
+  (character, end)
 }
 
 ///|
 fn identifier_name(
-  src : String,
+  source : String,
   start : Int,
   end : Int,
 ) -> String raise ParseError {
-  let out = StringBuilder()
-  let mut pos = start
-  while pos < end {
-    if src[pos] == '\\' {
-      let (ch, next) = identifier_escape(src, pos)
-      out.write_char(ch)
-      pos = next
+  let output = StringBuilder()
+  let mut position = start
+  while position < end {
+    if source[position] == '\\' {
+      let (character, next) = identifier_escape(source, position)
+      output.write_char(character)
+      position = next
     } else {
-      let begin = pos
-      while pos < end && src[pos] != '\\' {
-        pos += 1
+      let begin = position
+      while position < end && source[position] != '\\' {
+        position += 1
       }
-      out.write_substring(src, begin, pos - begin)
+      output.write_substring(source, begin, position - begin)
     }
   }
-  out.to_string()
+  output.to_string()
 }

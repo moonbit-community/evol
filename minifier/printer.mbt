@@ -1,86 +1,86 @@
 ///|
-fn op_text(op : Op) -> String {
-  match op {
-    Assign => "="
+fn operator_text(operator : Operator) -> String {
+  match operator {
+    Assignment => "="
     Add => "+"
-    Sub => "-"
-    Mul => "*"
-    Div => "/"
-    Mod => "%"
-    Exp => "**"
-    Shl => "<<"
-    Shr => ">>"
-    Ushr => ">>>"
-    Lt => "<"
-    Gt => ">"
-    Le => "<="
-    Ge => ">="
-    Eq => "=="
-    Ne => "!="
-    StrictEq => "==="
-    StrictNe => "!=="
-    BitAnd => "&"
-    BitOr => "|"
-    BitXor => "^"
+    Subtract => "-"
+    Multiply => "*"
+    Divide => "/"
+    Modulo => "%"
+    Exponent => "**"
+    ShiftLeft => "<<"
+    ShiftRight => ">>"
+    UnsignedShiftRight => ">>>"
+    LessThan => "<"
+    GreaterThan => ">"
+    LessThanOrEqual => "<="
+    GreaterThanOrEqual => ">="
+    Equal => "=="
+    NotEqual => "!="
+    StrictlyEqual => "==="
+    StrictlyNotEqual => "!=="
+    BitwiseAnd => "&"
+    BitwiseOr => "|"
+    BitwiseXor => "^"
     LogicalAnd => "&&"
     LogicalOr => "||"
-    Nullish => "??"
+    NullishCoalescing => "??"
     In => "in"
-    Instanceof => "instanceof"
-    Not => "!"
-    BitNot => "~"
+    InstanceOf => "instanceof"
+    LogicalNot => "!"
+    BitwiseNot => "~"
     Plus => "+"
     Minus => "-"
-    Typeof => "typeof"
+    TypeOf => "typeof"
     Void => "void"
     Delete => "delete"
     Await => "await"
     Yield => "yield"
     YieldStar => "yield*"
-    Inc => "++"
-    Dec => "--"
+    Increment => "++"
+    Decrement => "--"
   }
 }
 
 ///|
-fn op_is_word(op : Op) -> Bool {
-  match op {
-    In | Instanceof | Typeof | Void | Delete | Await | Yield | YieldStar => true
+fn operator_is_word(operator : Operator) -> Bool {
+  match operator {
+    In | InstanceOf | TypeOf | Void | Delete | Await | Yield | YieldStar => true
     _ => false
   }
 }
 
 ///|
 priv struct Printer {
-  prog : Program
-  out : StringBuilder
-  mut prev_word : Bool
-  mut prev_last : UInt16
+  program : Program
+  output : StringBuilder
+  mut previous_word : Bool
+  mut previous_last : UInt16
 }
 
 ///|
-fn Printer::new(prog : Program) -> Printer {
-  { prog, out: StringBuilder(), prev_word: false, prev_last: 0, }
+fn Printer::new(program : Program) -> Printer {
+  { program, output: StringBuilder(), previous_word: false, previous_last: 0, }
 }
 
 ///|
 fn Printer::need_sep(self : Printer, first : UInt16, word : Bool) -> Bool {
-  (self.prev_word && word) ||
-  (self.prev_last == '+' && first == '+') ||
-  (self.prev_last == '-' && first == '-') ||
-  (self.prev_last == '!' && first == '-') ||
-  (self.prev_last == '/' && (first == '/' || first == '*'))
+  (self.previous_word && word) ||
+  (self.previous_last == '+' && first == '+') ||
+  (self.previous_last == '-' && first == '-') ||
+  (self.previous_last == '!' && first == '-') ||
+  (self.previous_last == '/' && (first == '/' || first == '*'))
 }
 
 ///|
-fn Printer::write_str(self : Printer, s : String, word : Bool) -> Unit {
+fn Printer::write_string(self : Printer, s : String, word : Bool) -> Unit {
   if s.length() > 0 {
     if self.need_sep(s[0], word) {
-      self.out.write_string(" ")
+      self.output.write_string(" ")
     }
-    self.out.write_string(s)
-    self.prev_last = s[s.length() - 1]
-    self.prev_word = word
+    self.output.write_string(s)
+    self.previous_last = s[s.length() - 1]
+    self.previous_word = word
   }
 }
 
@@ -92,310 +92,315 @@ fn Printer::write_span(
   word : Bool,
 ) -> Unit {
   if end > start {
-    let src = self.prog.src
-    if self.need_sep(src[start], word) {
-      self.out.write_string(" ")
+    let source = self.program.source
+    if self.need_sep(source[start], word) {
+      self.output.write_string(" ")
     }
-    self.out.write_substring(src, start, end - start)
-    self.prev_last = src[end - 1]
-    self.prev_word = word
+    self.output.write_substring(source, start, end - start)
+    self.previous_last = source[end - 1]
+    self.previous_word = word
   }
 }
 
 ///|
-fn Printer::write_ref(self : Printer, ref_id : Int) -> Unit {
-  let r = self.prog.refs[ref_id]
-  let slot = if r.sym >= 0 { self.prog.symbols[r.sym].name_slot } else { -1 }
+fn Printer::write_reference(self : Printer, reference_id : Int) -> Unit {
+  let r = self.program.references[reference_id]
+  let slot = if r.symbol >= 0 {
+    self.program.symbols[r.symbol].name_slot
+  } else {
+    -1
+  }
   if slot >= 0 {
-    self.write_str(self.prog.generated_names[slot], true)
+    self.write_string(self.program.generated_names[slot], true)
   } else {
     self.write_span(r.name_start, r.name_end, true)
   }
 }
 
 ///|
-fn Printer::stmts(
+fn Printer::statements(
   self : Printer,
-  off : Int,
+  offset : Int,
   count : Int,
 ) -> Unit raise ParseError {
   for i in 0..<count {
-    self.stmt(self.prog.edges[off + i])
+    self.statement(self.program.edges[offset + i])
   }
 }
 
 ///|
 
 ///|
-fn Printer::expr_list(
+fn Printer::expression_list(
   self : Printer,
-  off : Int,
+  offset : Int,
   count : Int,
 ) -> Unit raise ParseError {
   for i in 0..<count {
     if i > 0 {
-      self.write_str(",", false)
+      self.write_string(",", false)
     }
-    self.expr(self.prog.edges[off + i])
+    self.expression(self.program.edges[offset + i])
   }
 }
 
 ///|
-fn Printer::pat(self : Printer, id : Int) -> Unit raise ParseError {
-  let n = self.prog.nodes[id]
+fn Printer::pattern(self : Printer, id : Int) -> Unit raise ParseError {
+  let n = self.program.nodes[id]
   match n.kind {
-    PatIdent | Ident => self.write_ref(n.a)
-    Member | Index => self.expr(id)
-    PatArray => {
-      self.write_str("[", false)
+    PatternIdentifier | Identifier => self.write_reference(n.a)
+    Member | Index => self.expression(id)
+    PatternArray => {
+      self.write_string("[", false)
       for i in 0..<n.b {
         if i > 0 {
-          self.write_str(",", false)
+          self.write_string(",", false)
         }
-        let item = self.prog.edges[n.a + i]
+        let item = self.program.edges[n.a + i]
         if item >= 0 {
-          self.pat(item)
+          self.pattern(item)
         }
       }
-      if n.b > 0 && self.prog.edges[n.a + n.b - 1] < 0 {
-        self.write_str(",", false)
+      if n.b > 0 && self.program.edges[n.a + n.b - 1] < 0 {
+        self.write_string(",", false)
       }
-      self.write_str("]", false)
+      self.write_string("]", false)
     }
-    PatObject => {
-      self.write_str("{", false)
+    PatternObject => {
+      self.write_string("{", false)
       for i in 0..<n.b {
         if i > 0 {
-          self.write_str(",", false)
+          self.write_string(",", false)
         }
-        self.pat(self.prog.edges[n.a + i])
+        self.pattern(self.program.edges[n.a + i])
       }
-      self.write_str("}", false)
+      self.write_string("}", false)
     }
-    PatProp => {
+    PatternProperty => {
       if n.d == 1 {
-        self.write_str("[", false)
-        self.expr(n.a)
-        self.write_str("]", false)
+        self.write_string("[", false)
+        self.expression(n.a)
+        self.write_string("]", false)
       } else {
-        self.pat_key(n.a)
+        self.pattern_key(n.a)
       }
       if n.c == 1 {
         let mut bind = n.b
-        let mut dflt = -1
-        if self.prog.nodes[bind].kind == PatDefault {
-          dflt = self.prog.nodes[bind].b
-          bind = self.prog.nodes[bind].a
+        let mut default_value = -1
+        if self.program.nodes[bind].kind == PatternDefault {
+          default_value = self.program.nodes[bind].b
+          bind = self.program.nodes[bind].a
         }
-        let bind_node = self.prog.nodes[bind]
-        let sym = if bind_node.kind == Ident || bind_node.kind == PatIdent {
-          self.prog.refs[bind_node.a].sym
+        let bind_node = self.program.nodes[bind]
+        let symbol = if bind_node.kind == Identifier ||
+          bind_node.kind == PatternIdentifier {
+          self.program.references[bind_node.a].symbol
         } else {
           -1
         }
-        if self.binding_renamed(sym) {
-          self.write_str(":", false)
-          self.write_str(
-            self.prog.generated_names[self.prog.symbols[sym].name_slot],
+        if self.binding_renamed(symbol) {
+          self.write_string(":", false)
+          self.write_string(
+            self.program.generated_names[self.program.symbols[symbol].name_slot],
             true,
           )
         }
-        if dflt >= 0 {
-          self.write_str("=", false)
-          self.expr(dflt)
+        if default_value >= 0 {
+          self.write_string("=", false)
+          self.expression(default_value)
         }
       } else {
-        self.write_str(":", false)
-        self.pat(n.b)
+        self.write_string(":", false)
+        self.pattern(n.b)
       }
     }
-    PatRest => {
-      self.write_str("...", false)
-      self.pat(n.a)
+    PatternRest => {
+      self.write_string("...", false)
+      self.pattern(n.a)
     }
-    PatDefault => {
-      self.pat(n.a)
-      self.write_str("=", false)
-      self.expr(n.b)
+    PatternDefault => {
+      self.pattern(n.a)
+      self.write_string("=", false)
+      self.expression(n.b)
     }
     _ => raise Unexpected("bad pattern: " + n.kind.to_repr().to_string())
   }
 }
 
 ///|
-fn Printer::pat_key(self : Printer, id : Int) -> Unit raise ParseError {
-  let n = self.prog.nodes[id]
+fn Printer::pattern_key(self : Printer, id : Int) -> Unit raise ParseError {
+  let n = self.program.nodes[id]
   match n.kind {
-    StringLit | NumberLit => self.write_span(n.a, n.b, true)
-    _ => self.expr(id)
+    StringLiteral | NumberLiteral => self.write_span(n.a, n.b, true)
+    _ => self.expression(id)
   }
 }
 
 ///|
-fn Printer::prop(self : Printer, id : Int) -> Unit raise ParseError {
-  let n = self.prog.nodes[id]
-  if n.kind == PatRest {
-    self.write_str("...", false)
-    self.expr(n.a)
+fn Printer::property(self : Printer, id : Int) -> Unit raise ParseError {
+  let n = self.program.nodes[id]
+  if n.kind == PatternRest {
+    self.write_string("...", false)
+    self.expression(n.a)
     return
   }
   if n.kind == Method {
-    let f = self.prog.funcs[n.b]
+    let f = self.program.functions[n.b]
     if n.c == 1 {
-      self.write_str("get", true)
+      self.write_string("get", true)
     } else if n.c == 2 {
-      self.write_str("set", true)
+      self.write_string("set", true)
     } else {
-      if (f.flags & fn_async) != 0 {
-        self.write_str("async", true)
+      if (f.flags & function_flag_async) != 0 {
+        self.write_string("async", true)
       }
-      if (f.flags & fn_generator) != 0 {
-        self.write_str("*", false)
+      if (f.flags & function_flag_generator) != 0 {
+        self.write_string("*", false)
       }
     }
     if n.d == 1 {
-      self.write_str("[", false)
-      self.expr(n.a)
-      self.write_str("]", false)
+      self.write_string("[", false)
+      self.expression(n.a)
+      self.write_string("]", false)
     } else {
-      self.pat_key(n.a)
+      self.pattern_key(n.a)
     }
-    self.params(f)
+    self.parameters(f)
     self.block(f.body)
     return
   }
   let expanded_proto = if n.c == 1 {
-    let reference = self.prog.refs[self.prog.nodes[n.b].a]
-    reference.name == name_proto && self.binding_renamed(reference.sym)
+    let reference = self.program.references[self.program.nodes[n.b].a]
+    reference.name == name_proto && self.binding_renamed(reference.symbol)
   } else {
     false
   }
   if expanded_proto {
-    self.write_str("[\"__proto__\"]", false)
+    self.write_string("[\"__proto__\"]", false)
   } else if n.d == 1 {
-    self.write_str("[", false)
-    self.expr(n.a)
-    self.write_str("]", false)
+    self.write_string("[", false)
+    self.expression(n.a)
+    self.write_string("]", false)
   } else {
-    self.pat_key(n.a)
+    self.pattern_key(n.a)
   }
   if n.c == 1 {
-    let sym = self.prog.refs[self.prog.nodes[n.b].a].sym
-    if self.binding_renamed(sym) {
-      self.write_str(":", false)
-      self.write_str(
-        self.prog.generated_names[self.prog.symbols[sym].name_slot],
+    let symbol = self.program.references[self.program.nodes[n.b].a].symbol
+    if self.binding_renamed(symbol) {
+      self.write_string(":", false)
+      self.write_string(
+        self.program.generated_names[self.program.symbols[symbol].name_slot],
         true,
       )
     }
   } else {
-    self.write_str(":", false)
-    self.expr(n.b)
+    self.write_string(":", false)
+    self.expression(n.b)
   }
 }
 
 ///|
-fn Printer::params(self : Printer, f : Func) -> Unit raise ParseError {
-  self.write_str("(", false)
-  for i in 0..<f.params_count {
+fn Printer::parameters(self : Printer, f : Function) -> Unit raise ParseError {
+  self.write_string("(", false)
+  for i in 0..<f.parameters_count {
     if i > 0 {
-      self.write_str(",", false)
+      self.write_string(",", false)
     }
-    self.pat(self.prog.edges[f.params_off + i])
+    self.pattern(self.program.edges[f.parameters_offset + i])
   }
-  self.write_str(")", false)
+  self.write_string(")", false)
 }
 
 ///|
-fn Printer::func(
+fn Printer::function(
   self : Printer,
   id : Int,
   with_name : Bool,
 ) -> Unit raise ParseError {
-  let f = self.prog.funcs[id]
-  if (f.flags & fn_arrow) != 0 {
-    if (f.flags & fn_async) != 0 {
-      self.write_str("async", true)
+  let f = self.program.functions[id]
+  if (f.flags & function_flag_arrow) != 0 {
+    if (f.flags & function_flag_async) != 0 {
+      self.write_string("async", true)
     }
-    self.params(f)
-    self.write_str("=>", false)
-    if (f.flags & fn_expr_body) != 0 {
-      self.expr(f.body)
+    self.parameters(f)
+    self.write_string("=>", false)
+    if (f.flags & function_flag_expression_body) != 0 {
+      self.expression(f.body)
     } else {
       self.block(f.body)
     }
     return
   }
-  if (f.flags & fn_async) != 0 {
-    self.write_str("async", true)
+  if (f.flags & function_flag_async) != 0 {
+    self.write_string("async", true)
   }
-  self.write_str("function", true)
-  if (f.flags & fn_generator) != 0 {
-    self.write_str("*", false)
+  self.write_string("function", true)
+  if (f.flags & function_flag_generator) != 0 {
+    self.write_string("*", false)
   }
   if with_name && f.name >= 0 {
-    self.write_ref(f.name)
+    self.write_reference(f.name)
   }
-  self.params(f)
+  self.parameters(f)
   self.block(f.body)
 }
 
 ///|
 fn Printer::class(self : Printer, id : Int) -> Unit raise ParseError {
-  let c = self.prog.classes[id]
-  self.write_str("class", true)
+  let c = self.program.classes[id]
+  self.write_string("class", true)
   if c.name >= 0 {
-    self.write_ref(c.name)
+    self.write_reference(c.name)
   }
   if c.superclass >= 0 {
-    self.write_str("extends", true)
-    self.expr(c.superclass)
+    self.write_string("extends", true)
+    self.expression(c.superclass)
   }
-  self.write_str("{", false)
+  self.write_string("{", false)
   for i in 0..<c.members_count {
-    self.class_member(self.prog.edges[c.members_off + i])
+    self.class_member(self.program.edges[c.members_offset + i])
   }
-  self.write_str("}", false)
+  self.write_string("}", false)
 }
 
 ///|
 fn Printer::class_member(self : Printer, id : Int) -> Unit raise ParseError {
-  let n = self.prog.nodes[id]
+  let n = self.program.nodes[id]
   match n.kind {
     Method => {
       if (n.d & 1) != 0 {
-        self.write_str("static", true)
+        self.write_string("static", true)
       }
-      let f = self.prog.funcs[n.b]
+      let f = self.program.functions[n.b]
       if n.c == 1 {
-        self.write_str("get", true)
+        self.write_string("get", true)
       } else if n.c == 2 {
-        self.write_str("set", true)
+        self.write_string("set", true)
       } else {
-        if (f.flags & fn_async) != 0 {
-          self.write_str("async", true)
+        if (f.flags & function_flag_async) != 0 {
+          self.write_string("async", true)
         }
-        if (f.flags & fn_generator) != 0 {
-          self.write_str("*", false)
+        if (f.flags & function_flag_generator) != 0 {
+          self.write_string("*", false)
         }
       }
       self.class_key(n)
-      self.params(f)
+      self.parameters(f)
       self.block(f.body)
     }
     ClassField => {
       if (n.d & 1) != 0 {
-        self.write_str("static", true)
+        self.write_string("static", true)
       }
       self.class_key(n)
       if n.b >= 0 {
-        self.write_str("=", false)
-        self.expr(n.b)
+        self.write_string("=", false)
+        self.expression(n.b)
       }
-      self.write_str(";", false)
+      self.write_string(";", false)
     }
     ClassStaticBlock => {
-      self.write_str("static", true)
+      self.write_string("static", true)
       self.block(n.a)
     }
     _ => raise Unexpected("bad class member: " + n.kind.to_repr().to_string())
@@ -404,193 +409,204 @@ fn Printer::class_member(self : Printer, id : Int) -> Unit raise ParseError {
 
 ///|
 fn Printer::block(self : Printer, id : Int) -> Unit raise ParseError {
-  let n = self.prog.nodes[id]
-  self.write_str("{", false)
-  self.stmts(n.a, n.b)
-  self.write_str("}", false)
+  let n = self.program.nodes[id]
+  self.write_string("{", false)
+  self.statements(n.a, n.b)
+  self.write_string("}", false)
 }
 
 ///|
-fn Printer::expr(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::expression(self : Printer, id : Int) -> Unit raise ParseError {
   if id < 0 {
     return
   }
-  let n = self.prog.nodes[id]
+  let n = self.program.nodes[id]
   match n.kind {
-    Ident => self.write_ref(n.a)
-    NumberLit | StringLit | RegexLit | TemplateNoSub =>
-      self.write_span(n.a, n.b, true)
-    BoolLit => self.write_str(if n.a == 1 { "true" } else { "false" }, true)
-    NullLit => self.write_str("null", true)
-    This => self.write_str("this", true)
-    Super => self.write_str("super", true)
-    ArrayLit => {
-      self.write_str("[", false)
+    Identifier => self.write_reference(n.a)
+    NumberLiteral
+    | StringLiteral
+    | RegexLiteral
+    | TemplateNoSubstitution => self.write_span(n.a, n.b, true)
+    BooleanLiteral =>
+      self.write_string(if n.a == 1 { "true" } else { "false" }, true)
+    NullLiteral => self.write_string("null", true)
+    This => self.write_string("this", true)
+    Super => self.write_string("super", true)
+    ArrayLiteral => {
+      self.write_string("[", false)
       for i in 0..<n.b {
         if i > 0 {
-          self.write_str(",", false)
+          self.write_string(",", false)
         }
-        let item = self.prog.edges[n.a + i]
+        let item = self.program.edges[n.a + i]
         if item >= 0 {
-          self.expr(item)
+          self.expression(item)
         }
       }
-      if n.b > 0 && self.prog.edges[n.a + n.b - 1] < 0 {
-        self.write_str(",", false)
+      if n.b > 0 && self.program.edges[n.a + n.b - 1] < 0 {
+        self.write_string(",", false)
       }
-      self.write_str("]", false)
+      self.write_string("]", false)
     }
-    ObjectLit => {
-      self.write_str("{", false)
+    ObjectLiteral => {
+      self.write_string("{", false)
       for i in 0..<n.b {
         if i > 0 {
-          self.write_str(",", false)
+          self.write_string(",", false)
         }
-        self.prop(self.prog.edges[n.a + i])
+        self.property(self.program.edges[n.a + i])
       }
-      self.write_str("}", false)
+      self.write_string("}", false)
     }
-    FunctionExpr => self.func(n.a, true)
-    FunctionDecl => self.func(n.a, true)
-    ArrowExpr => self.func(n.a, false)
-    ClassExpr => self.class(n.a)
-    ClassDecl => self.class(n.a)
+    FunctionExpression => self.function(n.a, true)
+    FunctionDeclaration => self.function(n.a, true)
+    ArrowExpression => self.function(n.a, false)
+    ClassExpression => self.class(n.a)
+    ClassDeclaration => self.class(n.a)
     Unary => {
-      let op = self.prog.ops[n.a]
+      let operator = self.program.operators[n.a]
       if n.b < 0 {
-        self.write_str(op_text(op), op_is_word(op))
+        self.write_string(operator_text(operator), operator_is_word(operator))
       } else {
-        self.write_str(op_text(op), op_is_word(op))
-        self.expr(n.b)
+        self.write_string(operator_text(operator), operator_is_word(operator))
+        self.expression(n.b)
       }
     }
     Update => {
-      let op = self.prog.ops[n.a]
+      let operator = self.program.operators[n.a]
       if n.b == 1 {
-        self.write_str(op_text(op), false)
-        self.expr(n.c)
+        self.write_string(operator_text(operator), false)
+        self.expression(n.c)
       } else {
-        self.expr(n.c)
-        self.write_str(op_text(op), false)
+        self.expression(n.c)
+        self.write_string(operator_text(operator), false)
       }
     }
     Binary | Logical => {
-      self.expr(n.b)
-      self.write_str(
-        op_text(self.prog.ops[n.a]),
-        op_is_word(self.prog.ops[n.a]),
+      self.expression(n.b)
+      self.write_string(
+        operator_text(self.program.operators[n.a]),
+        operator_is_word(self.program.operators[n.a]),
       )
-      self.expr(n.c)
+      self.expression(n.c)
     }
-    Assign => {
-      self.expr(n.b)
-      let op = self.prog.ops[n.a]
-      if op == Op::Assign {
-        self.write_str("=", false)
+    Assignment => {
+      self.expression(n.b)
+      let operator = self.program.operators[n.a]
+      if operator == Operator::Assignment {
+        self.write_string("=", false)
       } else {
-        self.write_str(op_text(op), false)
-        self.write_str("=", false)
+        self.write_string(operator_text(operator), false)
+        self.write_string("=", false)
       }
-      self.expr(n.c)
+      self.expression(n.c)
     }
-    Cond => {
-      self.expr(n.a)
-      self.write_str("?", false)
-      self.expr(n.b)
-      self.write_str(":", false)
-      self.expr(n.c)
+    Conditional => {
+      self.expression(n.a)
+      self.write_string("?", false)
+      self.expression(n.b)
+      self.write_string(":", false)
+      self.expression(n.c)
     }
     Call => {
-      self.expr(n.a)
+      self.expression(n.a)
       if n.d == 1 {
-        self.write_str("?.", false)
+        self.write_string("?.", false)
       }
-      self.write_str("(", false)
-      self.expr_list(n.b, n.c)
-      self.write_str(")", false)
+      self.write_string("(", false)
+      self.expression_list(n.b, n.c)
+      self.write_string(")", false)
     }
     New => {
-      self.write_str("new", true)
-      self.expr(n.a)
+      self.write_string("new", true)
+      self.expression(n.a)
       if n.b >= 0 {
-        self.write_str("(", false)
-        self.expr_list(n.b, n.c)
-        self.write_str(")", false)
+        self.write_string("(", false)
+        self.expression_list(n.b, n.c)
+        self.write_string(")", false)
       }
     }
     Member =>
       if n.a < 0 {
-        self.write_str("new", true)
-        self.write_str(".", false)
+        self.write_string("new", true)
+        self.write_string(".", false)
         self.write_span(n.b, n.c, true)
       } else {
-        let numeric = self.prog.nodes[n.a].kind == NumberLit
+        let numeric = self.program.nodes[n.a].kind == NumberLiteral
         if numeric {
-          self.write_str("(", false)
+          self.write_string("(", false)
         }
-        self.expr(n.a)
+        self.expression(n.a)
         if numeric {
-          self.write_str(")", false)
+          self.write_string(")", false)
         }
         if n.d == 1 {
-          self.write_str("?.", false)
+          self.write_string("?.", false)
         } else {
-          self.write_str(".", false)
+          self.write_string(".", false)
         }
         self.write_span(n.b, n.c, true)
       }
     Index => {
-      self.expr(n.a)
+      self.expression(n.a)
       if n.d == 1 {
-        self.write_str("?.", false)
+        self.write_string("?.", false)
       }
-      self.write_str("[", false)
-      self.expr(n.b)
-      self.write_str("]", false)
+      self.write_string("[", false)
+      self.expression(n.b)
+      self.write_string("]", false)
     }
-    Sequence => self.expr_list(n.a, n.b)
+    Sequence => self.expression_list(n.a, n.b)
     Spread => {
-      self.write_str("...", false)
-      self.expr(n.a)
+      self.write_string("...", false)
+      self.expression(n.a)
     }
-    Paren => {
-      self.write_str("(", false)
-      self.expr(n.a)
-      self.write_str(")", false)
+    Parenthesized => {
+      self.write_string("(", false)
+      self.expression(n.a)
+      self.write_string(")", false)
     }
     Template => {
-      self.write_str("`", false)
-      let mut idx = n.a
+      self.write_string("`", false)
+      let mut index = n.a
       for q in 0..<n.b {
-        self.write_span(self.prog.edges[idx], self.prog.edges[idx + 1], false)
-        idx = idx + 2
+        self.write_span(
+          self.program.edges[index],
+          self.program.edges[index + 1],
+          false,
+        )
+        index = index + 2
         if q < n.b - 1 {
-          self.write_str("${", false)
-          self.expr(self.prog.edges[idx])
-          idx = idx + 1
-          self.write_str("}", false)
+          self.write_string("${", false)
+          self.expression(self.program.edges[index])
+          index = index + 1
+          self.write_string("}", false)
         }
       }
-      self.write_str("`", false)
+      self.write_string("`", false)
     }
-    PatRest => {
-      self.write_str("...", false)
-      self.expr(n.a)
+    PatternRest => {
+      self.write_string("...", false)
+      self.expression(n.a)
     }
     TaggedTemplate => {
-      self.expr(n.a)
-      self.expr(n.b)
+      self.expression(n.a)
+      self.expression(n.b)
     }
-    PatIdent | PatArray | PatObject | PatProp | PatDefault => self.pat(id)
+    PatternIdentifier
+    | PatternArray
+    | PatternObject
+    | PatternProperty
+    | PatternDefault => self.pattern(id)
     _ => raise Unexpected("bad expression: " + n.kind.to_repr().to_string())
   }
 }
 
 ///|
-fn stmt_needs_semi(kind : Nk) -> Bool {
+fn statement_needs_semicolon(kind : NodeKind) -> Bool {
   match kind {
-    ExprStmt
-    | VarDecl
+    ExpressionStatement
+    | VariableDeclaration
     | Return
     | Throw
     | Break
@@ -603,174 +619,184 @@ fn stmt_needs_semi(kind : Nk) -> Bool {
 }
 
 ///|
-fn Printer::stmt(self : Printer, id : Int) -> Unit raise ParseError {
-  let n = self.prog.nodes[id]
+fn Printer::statement(self : Printer, id : Int) -> Unit raise ParseError {
+  let n = self.program.nodes[id]
   match n.kind {
-    ExprStmt => self.expr(n.a)
-    ModuleStmt => self.module_stmt(n.a)
+    ExpressionStatement => self.expression(n.a)
+    ModuleStatement => self.module_stmt(n.a)
     Block => {
       self.block(id)
       return
     }
-    VarDecl => self.var_decl(n)
+    VariableDeclaration => self.variable_declaration(n)
     Declarator => ()
-    FunctionDecl => self.func(n.a, true)
-    ClassDecl => self.class(n.a)
+    FunctionDeclaration => self.function(n.a, true)
+    ClassDeclaration => self.class(n.a)
     Empty => ()
-    Debugger => self.write_str("debugger", true)
+    Debugger => self.write_string("debugger", true)
     If => {
-      self.write_str("if", true)
-      self.write_str("(", false)
-      self.expr(n.a)
-      self.write_str(")", false)
-      self.stmt(n.b)
+      self.write_string("if", true)
+      self.write_string("(", false)
+      self.expression(n.a)
+      self.write_string(")", false)
+      self.statement(n.b)
       if n.c >= 0 {
-        self.write_str("else", true)
-        self.stmt(n.c)
+        self.write_string("else", true)
+        self.statement(n.c)
       }
       return
     }
     For => {
-      self.write_str("for", true)
-      self.write_str("(", false)
+      self.write_string("for", true)
+      self.write_string("(", false)
       if n.a >= 0 {
-        let init = self.prog.nodes[n.a]
-        if init.kind == VarDecl {
-          self.var_decl(init)
+        let initializer = self.program.nodes[n.a]
+        if initializer.kind == VariableDeclaration {
+          self.variable_declaration(initializer)
         } else {
-          self.expr(n.a)
+          self.expression(n.a)
         }
       }
-      self.write_str(";", false)
+      self.write_string(";", false)
       if n.b >= 0 {
-        self.expr(n.b)
+        self.expression(n.b)
       }
-      self.write_str(";", false)
+      self.write_string(";", false)
       if n.c >= 0 {
-        self.expr(n.c)
+        self.expression(n.c)
       }
-      self.write_str(")", false)
-      self.stmt(n.d)
+      self.write_string(")", false)
+      self.statement(n.d)
       return
     }
     ForIn | ForOf => {
-      self.write_str("for", true)
+      self.write_string("for", true)
       if n.d == 1 {
-        self.write_str("await", true)
+        self.write_string("await", true)
       }
-      self.write_str("(", false)
-      let left = self.prog.nodes[n.a]
-      if left.kind == VarDecl {
-        self.var_decl(left)
+      self.write_string("(", false)
+      let left = self.program.nodes[n.a]
+      if left.kind == VariableDeclaration {
+        self.variable_declaration(left)
       } else {
-        self.expr(n.a)
+        self.expression(n.a)
       }
-      self.write_str(if n.kind == ForIn { "in" } else { "of" }, true)
-      self.expr(n.b)
-      self.write_str(")", false)
-      self.stmt(n.c)
+      self.write_string(if n.kind == ForIn { "in" } else { "of" }, true)
+      self.expression(n.b)
+      self.write_string(")", false)
+      self.statement(n.c)
       return
     }
     While => {
-      self.write_str("while", true)
-      self.write_str("(", false)
-      self.expr(n.a)
-      self.write_str(")", false)
-      self.stmt(n.b)
+      self.write_string("while", true)
+      self.write_string("(", false)
+      self.expression(n.a)
+      self.write_string(")", false)
+      self.statement(n.b)
       return
     }
     DoWhile => {
-      self.write_str("do", true)
-      self.stmt(n.a)
-      self.write_str("while", true)
-      self.write_str("(", false)
-      self.expr(n.b)
-      self.write_str(")", false)
+      self.write_string("do", true)
+      self.statement(n.a)
+      self.write_string("while", true)
+      self.write_string("(", false)
+      self.expression(n.b)
+      self.write_string(")", false)
     }
     Return => {
-      self.write_str("return", true)
+      self.write_string("return", true)
       if n.a >= 0 {
-        self.expr(n.a)
+        self.expression(n.a)
       }
     }
     Throw => {
-      self.write_str("throw", true)
-      self.expr(n.a)
+      self.write_string("throw", true)
+      self.expression(n.a)
     }
     Break | Continue => {
-      self.write_str(if n.kind == Break { "break" } else { "continue" }, true)
+      self.write_string(
+        if n.kind == Break {
+          "break"
+        } else {
+          "continue"
+        },
+        true,
+      )
       if n.a >= 0 {
         self.write_span(n.a, n.b, true)
       }
     }
     Labeled => {
       self.write_span(n.a, n.b, true)
-      self.write_str(":", false)
-      self.stmt(n.c)
+      self.write_string(":", false)
+      self.statement(n.c)
       return
     }
     Switch => {
-      self.write_str("switch", true)
-      self.write_str("(", false)
-      self.expr(n.a)
-      self.write_str(")", false)
-      self.write_str("{", false)
+      self.write_string("switch", true)
+      self.write_string("(", false)
+      self.expression(n.a)
+      self.write_string(")", false)
+      self.write_string("{", false)
       for i in 0..<n.c {
-        self.switch_case(self.prog.edges[n.b + i])
+        self.switch_case(self.program.edges[n.b + i])
       }
-      self.write_str("}", false)
+      self.write_string("}", false)
       return
     }
     Try => {
-      self.write_str("try", true)
+      self.write_string("try", true)
       self.block(n.a)
       if n.b >= 0 {
-        let c = self.prog.nodes[n.b]
-        self.write_str("catch", true)
+        let c = self.program.nodes[n.b]
+        self.write_string("catch", true)
         if c.a >= 0 {
-          self.write_str("(", false)
-          self.pat(c.a)
-          self.write_str(")", false)
+          self.write_string("(", false)
+          self.pattern(c.a)
+          self.write_string(")", false)
         }
         self.block(c.b)
       }
       if n.c >= 0 {
-        self.write_str("finally", true)
+        self.write_string("finally", true)
         self.block(n.c)
       }
       return
     }
     With => {
-      self.write_str("with", true)
-      self.write_str("(", false)
-      self.expr(n.a)
-      self.write_str(")", false)
-      self.stmt(n.b)
+      self.write_string("with", true)
+      self.write_string("(", false)
+      self.expression(n.a)
+      self.write_string(")", false)
+      self.statement(n.b)
       return
     }
     _ => raise Unexpected("bad statement: " + n.kind.to_repr().to_string())
   }
-  if stmt_needs_semi(n.kind) {
-    self.write_str(";", false)
+  if statement_needs_semicolon(n.kind) {
+    self.write_string(";", false)
   }
 }
 
 ///|
 fn Printer::switch_case(self : Printer, id : Int) -> Unit raise ParseError {
-  let n = self.prog.nodes[id]
+  let n = self.program.nodes[id]
   if n.a >= 0 {
-    self.write_str("case", true)
-    self.expr(n.a)
+    self.write_string("case", true)
+    self.expression(n.a)
   } else {
-    self.write_str("default", true)
+    self.write_string("default", true)
   }
-  self.write_str(":", false)
-  self.stmts(n.b, n.c)
+  self.write_string(":", false)
+  self.statements(n.b, n.c)
 }
 
 ///|
-fn Printer::var_decl(self : Printer, n : Node) -> Unit raise ParseError {
-  self.write_str(
+fn Printer::variable_declaration(
+  self : Printer,
+  n : Node,
+) -> Unit raise ParseError {
+  self.write_string(
     if n.a == 0 {
       "var"
     } else if n.a == 1 {
@@ -782,40 +808,41 @@ fn Printer::var_decl(self : Printer, n : Node) -> Unit raise ParseError {
   )
   for i in 0..<n.c {
     if i > 0 {
-      self.write_str(",", false)
+      self.write_string(",", false)
     }
-    let d = self.prog.nodes[self.prog.edges[n.b + i]]
-    self.pat(d.a)
+    let d = self.program.nodes[self.program.edges[n.b + i]]
+    self.pattern(d.a)
     if d.b >= 0 {
-      self.write_str("=", false)
-      self.expr(d.b)
+      self.write_string("=", false)
+      self.expression(d.b)
     }
   }
 }
 
 ///|
-fn print_program(prog : Program) -> String raise ParseError {
-  let p = Printer::new(prog)
-  let root = prog.nodes[prog.root]
-  p.stmts(root.a, root.b)
-  p.out.to_string()
+fn print_program(program : Program) -> String raise ParseError {
+  let p = Printer::new(program)
+  let root = program.nodes[program.root]
+  p.statements(root.a, root.b)
+  p.output.to_string()
 }
 
 ///|
 fn Printer::class_key(self : Printer, property : Node) -> Unit raise ParseError {
   if (property.d & 2) != 0 {
-    self.write_str("[", false)
-    self.expr(property.a)
-    self.write_str("]", false)
+    self.write_string("[", false)
+    self.expression(property.a)
+    self.write_string("]", false)
   } else {
-    self.pat_key(property.a)
+    self.pattern_key(property.a)
   }
 }
 
 ///|
 fn Printer::binding_renamed(self : Printer, symbol : Int) -> Bool {
   guard symbol >= 0 else { return false }
-  let binding = self.prog.symbols[symbol]
+  let binding = self.program.symbols[symbol]
   binding.name_slot >= 0 &&
-  self.prog.generated_names[binding.name_slot] != self.prog.names[binding.name]
+  self.program.generated_names[binding.name_slot] !=
+  self.program.names[binding.name]
 }
