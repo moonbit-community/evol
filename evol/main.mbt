@@ -22,6 +22,7 @@ async fn main {
   let matches = try cmd.parse() catch {
     err => {
       @stdio.stderr.write("evol: \{@debug.to_string(err)}\n")
+      @sys.exit(1)
       return
     }
   } noraise {
@@ -41,7 +42,8 @@ async fn main {
   } catch {
     @minifier.ParseError::Unexpected(msg) => {
       @stdio.stderr.write("evol: \{msg}\n")
-      ""
+      @sys.exit(1)
+      return
     }
   } noraise {
     s => s

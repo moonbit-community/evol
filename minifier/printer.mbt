@@ -36,6 +36,7 @@ fn op_text(op : Op) -> String {
     Delete => "delete"
     Await => "await"
     Yield => "yield"
+    YieldStar => "yield*"
     Inc => "++"
     Dec => "--"
   }
@@ -44,7 +45,7 @@ fn op_text(op : Op) -> String {
 ///|
 fn op_is_word(op : Op) -> Bool {
   match op {
-    In | Instanceof | Typeof | Void | Delete | Await | Yield => true
+    In | Instanceof | Typeof | Void | Delete | Await | Yield | YieldStar => true
     _ => false
   }
 }
@@ -67,6 +68,7 @@ fn Printer::need_sep(self : Printer, first : UInt16, word : Bool) -> Bool {
   (self.prev_word && word) ||
   (self.prev_last == '+' && first == '+') ||
   (self.prev_last == '-' && first == '-') ||
+  (self.prev_last == '!' && first == '-') ||
   (self.prev_last == '/' && (first == '/' || first == '*'))
 }
 
@@ -103,8 +105,9 @@ fn Printer::write_span(
 ///|
 fn Printer::write_ref(self : Printer, ref_id : Int) -> Unit {
   let r = self.prog.refs[ref_id]
-  if r.sym >= 0 && self.prog.symbols[r.sym].new_name != "" {
-    self.write_str(self.prog.symbols[r.sym].new_name, true)
+  let slot = if r.sym >= 0 { self.prog.symbols[r.sym].name_slot } else { -1 }
+  if slot >= 0 {
+    self.write_str(self.prog.generated_names[slot], true)
   } else {
     self.write_span(r.name_start, r.name_end, true)
   }
@@ -142,6 +145,7 @@ fn Printer::pat(self : Printer, id : Int) -> Unit raise ParseError {
   let n = self.prog.nodes[id]
   match n.kind {
     PatIdent | Ident => self.write_ref(n.a)
+    Member | Index => self.expr(id)
     PatArray => {
       self.write_str("[", false)
       for i in 0..<n.b {
@@ -152,6 +156,9 @@ fn Printer::pat(self : Printer, id : Int) -> Unit raise ParseError {
         if item >= 0 {
           self.pat(item)
         }
+      }
+      if n.b > 0 && self.prog.edges[n.a + n.b - 1] < 0 {
+        self.write_str(",", false)
       }
       self.write_str("]", false)
     }
@@ -186,9 +193,12 @@ fn Printer::pat(self : Printer, id : Int) -> Unit raise ParseError {
         } else {
           -1
         }
-        if sym >= 0 && self.prog.symbols[sym].new_name != "" {
+        if self.binding_renamed(sym) {
           self.write_str(":", false)
-          self.write_str(self.prog.symbols[sym].new_name, true)
+          self.write_str(
+            self.prog.generated_names[self.prog.symbols[sym].name_slot],
+            true,
+          )
         }
         if dflt >= 0 {
           self.write_str("=", false)
@@ -254,7 +264,15 @@ fn Printer::prop(self : Printer, id : Int) -> Unit raise ParseError {
     self.block(f.body)
     return
   }
-  if n.d == 1 {
+  let expanded_proto = if n.c == 1 {
+    let reference = self.prog.refs[self.prog.nodes[n.b].a]
+    reference.name == name_proto && self.binding_renamed(reference.sym)
+  } else {
+    false
+  }
+  if expanded_proto {
+    self.write_str("[\"__proto__\"]", false)
+  } else if n.d == 1 {
     self.write_str("[", false)
     self.expr(n.a)
     self.write_str("]", false)
@@ -263,9 +281,12 @@ fn Printer::prop(self : Printer, id : Int) -> Unit raise ParseError {
   }
   if n.c == 1 {
     let sym = self.prog.refs[self.prog.nodes[n.b].a].sym
-    if sym >= 0 && self.prog.symbols[sym].new_name != "" {
+    if self.binding_renamed(sym) {
       self.write_str(":", false)
-      self.write_str(self.prog.symbols[sym].new_name, true)
+      self.write_str(
+        self.prog.generated_names[self.prog.symbols[sym].name_slot],
+        true,
+      )
     }
   } else {
     self.write_str(":", false)
@@ -342,7 +363,7 @@ fn Printer::class_member(self : Printer, id : Int) -> Unit raise ParseError {
   let n = self.prog.nodes[id]
   match n.kind {
     Method => {
-      if n.d == 1 {
+      if (n.d & 1) != 0 {
         self.write_str("static", true)
       }
       let f = self.prog.funcs[n.b]
@@ -358,20 +379,24 @@ fn Printer::class_member(self : Printer, id : Int) -> Unit raise ParseError {
           self.write_str("*", false)
         }
       }
-      self.pat_key(n.a)
+      self.class_key(n)
       self.params(f)
       self.block(f.body)
     }
     ClassField => {
-      if n.d == 1 {
+      if (n.d & 1) != 0 {
         self.write_str("static", true)
       }
-      self.pat_key(n.a)
+      self.class_key(n)
       if n.b >= 0 {
         self.write_str("=", false)
         self.expr(n.b)
       }
       self.write_str(";", false)
+    }
+    ClassStaticBlock => {
+      self.write_str("static", true)
+      self.block(n.a)
     }
     _ => raise Unexpected("bad class member: " + n.kind.to_repr().to_string())
   }
@@ -409,6 +434,9 @@ fn Printer::expr(self : Printer, id : Int) -> Unit raise ParseError {
         if item >= 0 {
           self.expr(item)
         }
+      }
+      if n.b > 0 && self.prog.edges[n.a + n.b - 1] < 0 {
+        self.write_str(",", false)
       }
       self.write_str("]", false)
     }
@@ -496,7 +524,14 @@ fn Printer::expr(self : Printer, id : Int) -> Unit raise ParseError {
         self.write_str(".", false)
         self.write_span(n.b, n.c, true)
       } else {
+        let numeric = self.prog.nodes[n.a].kind == NumberLit
+        if numeric {
+          self.write_str("(", false)
+        }
         self.expr(n.a)
+        if numeric {
+          self.write_str(")", false)
+        }
         if n.d == 1 {
           self.write_str("?.", false)
         } else {
@@ -572,6 +607,7 @@ fn Printer::stmt(self : Printer, id : Int) -> Unit raise ParseError {
   let n = self.prog.nodes[id]
   match n.kind {
     ExprStmt => self.expr(n.a)
+    ModuleStmt => self.module_stmt(n.a)
     Block => {
       self.block(id)
       return
@@ -619,6 +655,9 @@ fn Printer::stmt(self : Printer, id : Int) -> Unit raise ParseError {
     }
     ForIn | ForOf => {
       self.write_str("for", true)
+      if n.d == 1 {
+        self.write_str("await", true)
+      }
       self.write_str("(", false)
       let left = self.prog.nodes[n.a]
       if left.kind == VarDecl {
@@ -760,4 +799,23 @@ fn print_program(prog : Program) -> String raise ParseError {
   let root = prog.nodes[prog.root]
   p.stmts(root.a, root.b)
   p.out.to_string()
+}
+
+///|
+fn Printer::class_key(self : Printer, property : Node) -> Unit raise ParseError {
+  if (property.d & 2) != 0 {
+    self.write_str("[", false)
+    self.expr(property.a)
+    self.write_str("]", false)
+  } else {
+    self.pat_key(property.a)
+  }
+}
+
+///|
+fn Printer::binding_renamed(self : Printer, symbol : Int) -> Bool {
+  guard symbol >= 0 else { return false }
+  let binding = self.prog.symbols[symbol]
+  binding.name_slot >= 0 &&
+  self.prog.generated_names[binding.name_slot] != self.prog.names[binding.name]
 }

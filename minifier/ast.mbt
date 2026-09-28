@@ -21,6 +21,7 @@ priv enum Nk {
   PatProp
   PatRest
   PatDefault
+  CoverDefault
   FunctionExpr
   FunctionDecl
   ArrowExpr
@@ -63,6 +64,8 @@ priv enum Nk {
   With
   Method
   ClassField
+  ClassStaticBlock
+  ModuleStmt
 } derive(Eq, Debug)
 
 ///|
@@ -106,11 +109,13 @@ priv enum Op {
   Delete
   Await
   Yield
+  YieldStar
   Inc
   Dec
 } derive(Eq)
 
 ///|
+#valtype
 priv struct Node {
   kind : Nk
   a : Int
@@ -125,6 +130,7 @@ fn Node::new(kind : Nk, a : Int, b : Int, c : Int, d : Int) -> Node {
 }
 
 ///|
+#valtype
 priv struct Func {
   name : Int
   params_off : Int
@@ -146,6 +152,7 @@ let fn_arrow : Int = 4
 let fn_expr_body : Int = 8
 
 ///|
+#valtype
 priv struct Class {
   name : Int
   superclass : Int
@@ -154,31 +161,34 @@ priv struct Class {
 }
 
 ///|
+#valtype
 priv struct Ref {
   scope : Int
   name_start : Int
   name_end : Int
-  mut sym : Int
+  name : Int
+  sym : Int
 }
 
 ///|
+#valtype
 priv struct Symbol {
-  name_start : Int
-  name_end : Int
+  name : Int
   scope : Int
   flags : Int
-  mut use_count : Int
-  mut new_name : String
+  link : Int
+  use_count : Int
+  name_slot : Int
 }
 
 ///|
 let sym_must_not_rename : Int = 1
 
 ///|
+#valtype
 priv struct Scope {
   parent : Int
   kind : Int
-  members : Map[String, Int]
 }
 
 ///|
@@ -197,6 +207,15 @@ let scope_catch : Int = 3
 let scope_class : Int = 4
 
 ///|
+let scope_parameters : Int = 5
+
+///|
+let scope_arrow_parameters : Int = 6
+
+///|
+let scope_transparent : Int = 7
+
+///|
 priv struct Program {
   src : String
   nodes : Array[Node]
@@ -204,10 +223,18 @@ priv struct Program {
   refs : Array[Ref]
   symbols : Array[Symbol]
   scopes : Array[Scope]
+  scope_members : Array[Map[Int, Int]]
   funcs : Array[Func]
   classes : Array[Class]
   ops : Array[Op]
+  modules : Array[ModuleStatement]
   mut root : Int
+  preserved_names : Map[Int, Bool]
+  names : Array[String]
+  generated_names : Array[String]
+  identifier_ids : Map[StringView, Int]
+  mut has_direct_eval : Bool
+  mut cover_defaults : Int
 }
 
 ///|
@@ -219,12 +246,24 @@ fn Program::new(src : String) -> Program {
     refs: [],
     symbols: [],
     scopes: [],
+    scope_members: [],
     funcs: [],
     classes: [],
     ops: [],
+    modules: [],
     root: -1,
+    preserved_names: {},
+    names: ["arguments", "eval", "__proto__"],
+    generated_names: [],
+    identifier_ids: {
+      "arguments": name_arguments,
+      "eval": name_eval,
+      "__proto__": name_proto,
+    },
+    has_direct_eval: false,
+    cover_defaults: 0,
   }
-  p.scopes.push({ parent: -1, kind: scope_module, members: {}, })
+  ignore(p.push_scope(-1, scope_module))
   p
 }
 
@@ -258,13 +297,9 @@ fn Program::edge_list(self : Program, xs : Array[Int]) -> (Int, Int) {
 
 ///|
 fn Program::push_scope(self : Program, parent : Int, kind : Int) -> Int {
-  self.scopes.push({ parent, kind, members: {}, })
+  self.scope_members.push(Map([]))
+  self.scopes.push({ parent, kind, })
   self.scopes.length() - 1
-}
-
-///|
-fn Program::src_span(self : Program, start : Int, end : Int) -> String {
-  self.src[start:end].to_owned()
 }
 
 ///|
@@ -273,22 +308,80 @@ fn Program::add_symbol(
   name_start : Int,
   name_end : Int,
   scope : Int,
-) -> Int {
-  let name = self.src_span(name_start, name_end)
-  match self.scopes[scope].members.get(name) {
-    Some(id) => id
-    None => {
-      self.symbols.push({
-        name_start,
-        name_end,
-        scope,
-        flags: 0,
-        use_count: 0,
-        new_name: "",
-      })
-      let id = self.symbols.length() - 1
-      self.scopes[scope].members[name] = id
-      id
-    }
+) -> Int raise ParseError {
+  let name = self.identifier(name_start, name_end)
+  guard self.scope_members[scope].get(name) is Some(id) else {
+    let id = self.symbols.length()
+    self.symbols.push({
+      name,
+      scope,
+      flags: 0,
+      link: -1,
+      use_count: 0,
+      name_slot: -1,
+    })
+    self.scope_members[scope][name] = id
+    return id
   }
+  id
+}
+
+///|
+/// Symbols linked here must keep the same spelling even when JavaScript creates
+/// distinct bindings (for example, a catch parameter and a hoisted var).
+fn Program::symbol_root(self : Program, id : Int) -> Int {
+  for current = id {
+    let next = self.symbols[current].link
+    guard next >= 0 else { break current }
+    continue next
+  }
+}
+
+///|
+fn Program::link_symbols(self : Program, left : Int, right : Int) -> Unit {
+  let left = self.symbol_root(left)
+  let right = self.symbol_root(right)
+  if left != right {
+    self.symbols[right] = { ..self.symbols[right], link: left, }
+  }
+}
+
+///|
+let name_arguments : Int = 0
+
+///|
+let name_eval : Int = 1
+
+///|
+let name_proto : Int = 2
+
+///|
+/// Intern source views without copying ordinary identifiers on each reference.
+/// Escaped spellings and literal spellings share the same canonical identity.
+fn Program::identifier(
+  self : Program,
+  start : Int,
+  end : Int,
+) -> Int raise ParseError {
+  let spelling = self.src[start:end]
+  if self.identifier_ids.get(spelling) is Some(id) {
+    return id
+  }
+  let escaped = spelling.contains_code_unit('\\')
+  let name = if escaped {
+    identifier_name(self.src, start, end)
+  } else {
+    spelling.to_owned()
+  }
+  if escaped && self.identifier_ids.get(name[:]) is Some(id) {
+    self.identifier_ids[spelling] = id
+    return id
+  }
+  let id = self.names.length()
+  self.names.push(name)
+  self.identifier_ids[spelling] = id
+  if escaped {
+    self.identifier_ids[name[:]] = id
+  }
+  id
 }

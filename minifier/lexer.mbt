@@ -8,10 +8,7 @@ fn is_ws(c : UInt16) -> Bool {
   if c < 0x80 {
     c == ' ' || c == '\t' || c == 0x0B || c == 0x0C
   } else {
-    match c.to_int().to_char() {
-      Some(ch) => ch.is_whitespace()
-      None => false
-    }
+    c == 0xFEFF || c.to_int().to_char().map_or(false, ch => ch.is_whitespace())
   }
 }
 
@@ -72,9 +69,20 @@ fn Lexer::new(src : String) -> Lexer {
 }
 
 ///|
-fn Lexer::snapshot(self : Lexer) -> Lexer {
+#valtype
+priv struct LexerSnapshot {
+  pos : Int
+  tok : Tok
+  start : Int
+  end : Int
+  newline_before : Bool
+  quasi_start : Int
+  quasi_end : Int
+}
+
+///|
+fn Lexer::snapshot(self : Lexer) -> LexerSnapshot {
   {
-    src: self.src,
     pos: self.pos,
     tok: self.tok,
     start: self.start,
@@ -86,7 +94,7 @@ fn Lexer::snapshot(self : Lexer) -> Lexer {
 }
 
 ///|
-fn Lexer::restore(self : Lexer, other : Lexer) -> Unit {
+fn Lexer::restore(self : Lexer, other : LexerSnapshot) -> Unit {
   self.pos = other.pos
   self.tok = other.tok
   self.start = other.start
@@ -141,7 +149,7 @@ fn Lexer::is_kw(self : Lexer, kw : String) -> Bool {
 }
 
 ///|
-fn Lexer::skip_trivia(self : Lexer) -> Unit {
+fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
   let len = self.src.length()
   if self.pos == 0 && len >= 2 && self.src[0] == '#' && self.src[1] == '!' {
     while self.pos < len && !is_line_term(self.ch()) {
@@ -170,9 +178,11 @@ fn Lexer::skip_trivia(self : Lexer) -> Unit {
       }
       if d == 42 {
         self.pos = self.pos + 2
+        let mut closed = false
         while self.pos < len {
           if self.src[self.pos] == '*' && self.peek(1) == 47 {
             self.pos = self.pos + 2
+            closed = true
             break
           }
           if is_line_term(self.ch()) {
@@ -180,6 +190,7 @@ fn Lexer::skip_trivia(self : Lexer) -> Unit {
           }
           self.pos = self.pos + 1
         }
+        guard closed else { raise Unexpected("unterminated comment") }
         continue
       }
     }
@@ -188,13 +199,35 @@ fn Lexer::skip_trivia(self : Lexer) -> Unit {
 }
 
 ///|
-fn Lexer::scan_ident(self : Lexer) -> Unit {
+fn Lexer::scan_ident(self : Lexer) -> Unit raise ParseError {
   if self.ch() == '#' {
-    self.pos = self.pos + 1
+    self.pos += 1
   }
-  while is_id_continue(self.ch()) {
-    self.pos = self.pos + 1
+  let mut first = true
+  while self.pos < self.src.length() {
+    if self.ch() == '\\' {
+      let (ch, end) = identifier_escape(self.src, self.pos)
+      let code = ch.to_int()
+      let valid = code >= 0x80 ||
+        code == 36 ||
+        code == 95 ||
+        (code >= 65 && code <= 90) ||
+        (code >= 97 && code <= 122) ||
+        (!first && code >= 48 && code <= 57)
+      guard valid && !ch.is_whitespace() else {
+        raise Unexpected("invalid identifier escape")
+      }
+      self.pos = end
+    } else if is_id_continue(self.ch()) &&
+      !is_ws(self.ch()) &&
+      !is_line_term(self.ch()) {
+      self.pos += 1
+    } else {
+      break
+    }
+    first = false
   }
+  guard !first else { raise Unexpected("identifier expected") }
   self.tok = Ident
   self.end = self.pos
 }
@@ -263,62 +296,86 @@ fn Lexer::finish_number(self : Lexer) -> Unit {
 }
 
 ///|
-fn Lexer::scan_string(self : Lexer, quote : UInt16) -> Unit {
-  self.pos = self.pos + 1
+fn Lexer::scan_string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
+  self.pos += 1
   while self.pos < self.src.length() {
     let c = self.ch()
-    if c == '\\' {
-      self.pos = self.pos + 2
-      continue
-    }
     if c == quote {
-      self.pos = self.pos + 1
-      break
+      self.pos += 1
+      self.tok = Str
+      self.end = self.pos
+      return
     }
-    self.pos = self.pos + 1
+    guard c != '\n' && c != '\r' else {
+      raise Unexpected("newline in string literal")
+    }
+    if c == '\\' {
+      guard self.pos + 1 < self.src.length() else {
+        raise Unexpected("unterminated string escape")
+      }
+      self.pos += 2
+      if self.src[self.pos - 1] == '\r' && self.ch() == '\n' {
+        self.pos += 1
+      }
+    } else {
+      self.pos += 1
+    }
   }
-  self.tok = Str
-  self.end = self.pos
+  raise Unexpected("unterminated string literal")
 }
 
 ///|
-fn Lexer::scan_regex(self : Lexer) -> Unit {
-  self.pos = self.pos + 1
+fn Lexer::scan_regex(self : Lexer) -> Unit raise ParseError {
+  self.pos += 1
   let mut in_class = false
   while self.pos < self.src.length() {
     let c = self.ch()
+    guard !is_line_term(c) else {
+      raise Unexpected("newline in regular expression")
+    }
     if c == '\\' {
-      self.pos = self.pos + 2
+      guard self.pos + 1 < self.src.length() && !is_line_term(self.ch_at(1)) else {
+        raise Unexpected("unterminated regular expression escape")
+      }
+      self.pos += 2
       continue
     }
-    if is_line_term(c) {
-      break
+    if c == '/' && !in_class {
+      self.pos += 1
+      while is_id_continue(self.ch()) &&
+            !is_ws(self.ch()) &&
+            !is_line_term(self.ch()) {
+        self.pos += 1
+      }
+      self.tok = Regex
+      self.end = self.pos
+      return
     }
     if c == '[' {
       in_class = true
-    } else if c == ']' {
-      in_class = false
-    } else if c == '/' && !in_class {
-      self.pos = self.pos + 1
-      break
     }
-    self.pos = self.pos + 1
+    if c == ']' {
+      in_class = false
+    }
+    self.pos += 1
   }
-  while is_id_continue(self.ch()) {
-    self.pos = self.pos + 1
-  }
-  self.tok = Regex
-  self.end = self.pos
+  raise Unexpected("unterminated regular expression")
 }
 
 ///|
-fn Lexer::scan_template_chunk(self : Lexer, is_start : Bool) -> Unit {
+fn Lexer::scan_template_chunk(
+  self : Lexer,
+  is_start : Bool,
+) -> Unit raise ParseError {
   let len = self.src.length()
   let begin = self.pos
   while self.pos < len {
     let c = self.src[self.pos]
     if c == '\\' {
-      self.pos = self.pos + 2
+      guard self.pos + 1 < len else {
+        raise Unexpected("unterminated template escape")
+      }
+      self.pos += 2
       continue
     }
     if c == '`' {
@@ -339,20 +396,17 @@ fn Lexer::scan_template_chunk(self : Lexer, is_start : Bool) -> Unit {
     }
     self.pos = self.pos + 1
   }
-  self.quasi_start = begin
-  self.quasi_end = self.pos
-  self.tok = if is_start { TmplNoSub } else { TmplTail }
-  self.end = self.pos
+  raise Unexpected("unterminated template literal")
 }
 
 ///|
-fn Lexer::rescan_template_continue(self : Lexer) -> Unit {
+fn Lexer::rescan_template_continue(self : Lexer) -> Unit raise ParseError {
   self.start = self.pos
   self.scan_template_chunk(false)
 }
 
 ///|
-fn Lexer::next(self : Lexer, regex_allowed : Bool) -> Unit {
+fn Lexer::next(self : Lexer) -> Unit raise ParseError {
   self.newline_before = false
   self.skip_trivia()
   self.start = self.pos
@@ -363,7 +417,7 @@ fn Lexer::next(self : Lexer, regex_allowed : Bool) -> Unit {
     return
   }
   let c = self.ch()
-  if is_id_start(c) {
+  if is_id_start(c) || c == '\\' {
     self.scan_ident()
     return
   }
@@ -386,10 +440,6 @@ fn Lexer::next(self : Lexer, regex_allowed : Bool) -> Unit {
   }
   if c == '/' {
     let d = self.peek(1)
-    if regex_allowed {
-      self.scan_regex()
-      return
-    }
     if d == 61 {
       self.pos = self.pos + 2
       self.tok = DivAssign
@@ -405,7 +455,7 @@ fn Lexer::next(self : Lexer, regex_allowed : Bool) -> Unit {
 }
 
 ///|
-fn Lexer::scan_punct(self : Lexer, c : Int) -> Unit {
+fn Lexer::scan_punct(self : Lexer, c : Int) -> Unit raise ParseError {
   match c {
     40 => {
       self.pos = self.pos + 1
@@ -608,10 +658,59 @@ fn Lexer::scan_punct(self : Lexer, c : Int) -> Unit {
         self.pos = self.pos + 1
         self.tok = Percent
       }
-    _ => {
-      self.pos = self.pos + 1
-      self.tok = Eof
-    }
+    _ => raise Unexpected("unexpected character at offset \{self.pos}")
   }
   self.end = self.pos
+}
+
+///|
+fn identifier_escape(src : String, start : Int) -> (Char, Int) raise ParseError {
+  guard start + 2 < src.length() && src[start + 1] == 'u' else {
+    raise Unexpected("expected Unicode identifier escape")
+  }
+  let braced = src[start + 2] == '{'
+  let begin = start + (if braced { 3 } else { 2 })
+  let (value, end) = for value = 0, pos = begin {
+    if braced && pos < src.length() && src[pos] == '}' {
+      guard pos > begin else { raise Unexpected("empty Unicode escape") }
+      break (value, pos + 1)
+    }
+    if !braced && pos == begin + 4 {
+      break (value, pos)
+    }
+    guard pos < src.length() && is_hex(src[pos]) && value <= 0x10FFFF / 16 else {
+      raise Unexpected("invalid Unicode escape")
+    }
+    let c = src[pos].to_int()
+    let digit = if c <= 57 { c - 48 } else if c <= 70 { c - 55 } else { c - 87 }
+    continue value * 16 + digit, pos + 1
+  }
+  guard value.to_char() is Some(ch) else {
+    raise Unexpected("invalid Unicode code point")
+  }
+  (ch, end)
+}
+
+///|
+fn identifier_name(
+  src : String,
+  start : Int,
+  end : Int,
+) -> String raise ParseError {
+  let out = StringBuilder()
+  let mut pos = start
+  while pos < end {
+    if src[pos] == '\\' {
+      let (ch, next) = identifier_escape(src, pos)
+      out.write_char(ch)
+      pos = next
+    } else {
+      let begin = pos
+      while pos < end && src[pos] != '\\' {
+        pos += 1
+      }
+      out.write_substring(src, begin, pos - begin)
+    }
+  }
+  out.to_string()
 }
