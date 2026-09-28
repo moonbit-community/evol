@@ -1,5 +1,4 @@
 ///|
-#warnings("-implicit_impl_as_method")
 priv enum Tok {
   Eof
   Ident

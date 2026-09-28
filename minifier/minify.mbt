@@ -3,10 +3,7 @@
 /// Top-level names and names exposed to dynamic scope are preserved.
 /// Raises ParseError when the input cannot be parsed.
 pub fn minify(src : String) -> String raise ParseError {
-  let prog = parse_program(src)
-  resolve(prog)
-  mangle(prog, false)
-  print_program(prog)
+  minify_with(src, false)
 }
 
 ///|

@@ -66,16 +66,13 @@ fn Parser::peek_is_kw(self : Parser, kw : String) -> Bool raise ParseError {
 
 ///|
 fn Parser::nearest_var_scope(self : Parser) -> Int {
-  let mut s = self.scope
-  while s >= 0 &&
-        self.prog.scopes[s].kind != scope_module &&
-        self.prog.scopes[s].kind != scope_function {
-    s = self.prog.scopes[s].parent
-  }
-  if s < 0 {
-    0
-  } else {
-    s
+  // Parsing scopes form a tree rooted at scope_module.
+  for scope = self.scope {
+    let kind = self.prog.scopes[scope].kind
+    if kind == scope_module || kind == scope_function {
+      break scope
+    }
+    continue self.prog.scopes[scope].parent
   }
 }
 
@@ -136,11 +133,10 @@ fn Parser::declare_pattern(
 ///|
 fn Parser::parse_pattern(
   self : Parser,
-  declaring : Bool,
   sc : Int,
   allow_default : Bool,
 ) -> Int raise ParseError {
-  let inner = self.parse_pattern_atom(declaring, sc)
+  let inner = self.parse_pattern_atom(sc)
   if allow_default && self.lx.tok == Assign {
     self.advance()
     let d = self.parse_assign_in()
@@ -151,34 +147,22 @@ fn Parser::parse_pattern(
 }
 
 ///|
-fn Parser::parse_pattern_atom(
-  self : Parser,
-  declaring : Bool,
-  sc : Int,
-) -> Int raise ParseError {
+fn Parser::parse_pattern_atom(self : Parser, sc : Int) -> Int raise ParseError {
   match self.lx.tok {
     Ident => {
       let s = self.lx.start
       let e = self.lx.end
       self.advance()
-      if declaring {
-        self.declare_pattern(sc, s, e)
-      } else {
-        self.prog.node(Ident, self.add_ref(sc, s, e), 0, 0, 0)
-      }
+      self.declare_pattern(sc, s, e)
     }
-    LBracket => self.parse_array_pattern(declaring, sc)
-    LBrace => self.parse_object_pattern(declaring, sc)
+    LBracket => self.parse_array_pattern(sc)
+    LBrace => self.parse_object_pattern(sc)
     _ => raise Unexpected("pattern expected, got \{self.lx.tok.to_repr()}")
   }
 }
 
 ///|
-fn Parser::parse_array_pattern(
-  self : Parser,
-  declaring : Bool,
-  sc : Int,
-) -> Int raise ParseError {
+fn Parser::parse_array_pattern(self : Parser, sc : Int) -> Int raise ParseError {
   self.expect(LBracket)
   let items : Array[Int] = []
   while self.lx.tok != RBracket && self.lx.tok != Eof {
@@ -189,10 +173,10 @@ fn Parser::parse_array_pattern(
     }
     if self.lx.tok == Ellipsis {
       self.advance()
-      let inner = self.parse_pattern(declaring, sc, false)
+      let inner = self.parse_pattern(sc, false)
       items.push(self.prog.node(PatRest, inner, 0, 0, 0))
     } else {
-      items.push(self.parse_pattern(declaring, sc, true))
+      items.push(self.parse_pattern(sc, true))
     }
     if !self.eat(Comma) {
       break
@@ -206,7 +190,6 @@ fn Parser::parse_array_pattern(
 ///|
 fn Parser::parse_object_pattern(
   self : Parser,
-  declaring : Bool,
   sc : Int,
 ) -> Int raise ParseError {
   self.expect(LBrace)
@@ -214,10 +197,10 @@ fn Parser::parse_object_pattern(
   while self.lx.tok != RBrace && self.lx.tok != Eof {
     if self.lx.tok == Ellipsis {
       self.advance()
-      let inner = self.parse_pattern(declaring, sc, false)
+      let inner = self.parse_pattern(sc, false)
       items.push(self.prog.node(PatRest, inner, 0, 0, 0))
     } else {
-      items.push(self.parse_pattern_prop(declaring, sc, true))
+      items.push(self.parse_pattern_prop(sc))
     }
     if !self.eat(Comma) {
       break
@@ -229,12 +212,7 @@ fn Parser::parse_object_pattern(
 }
 
 ///|
-fn Parser::parse_pattern_prop(
-  self : Parser,
-  declaring : Bool,
-  sc : Int,
-  allow_default : Bool,
-) -> Int raise ParseError {
+fn Parser::parse_pattern_prop(self : Parser, sc : Int) -> Int raise ParseError {
   let mut computed = 0
   let mut key = -1
   if self.lx.tok == LBracket {
@@ -246,17 +224,13 @@ fn Parser::parse_pattern_prop(
     key = self.parse_property_key()
   }
   if self.eat(Colon) {
-    let v = self.parse_pattern(declaring, sc, allow_default)
+    let v = self.parse_pattern(sc, true)
     return self.prog.node(PatProp, key, v, 0, computed)
   }
   let ks = self.prog.nodes[key].a
   let ke = self.prog.nodes[key].b
-  let v = if declaring {
-    self.declare_pattern(sc, ks, ke)
-  } else {
-    self.prog.node(Ident, self.add_ref(sc, ks, ke), 0, 0, 0)
-  }
-  let v2 = if allow_default && self.lx.tok == Assign {
+  let v = self.declare_pattern(sc, ks, ke)
+  let v2 = if self.lx.tok == Assign {
     self.advance()
     let d = self.parse_assign_in()
     self.prog.node(PatDefault, v, d, 0, 0)
@@ -421,21 +395,7 @@ fn Parser::parse_block(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::parse_var_decl(self : Parser, kind : Int) -> Int raise ParseError {
-  let sc = if kind == 0 { self.nearest_var_scope() } else { self.scope }
-  let decls : Array[Int] = []
-  while true {
-    let pat = self.parse_pattern(true, sc, false)
-    let init = if self.lx.tok == Assign {
-      self.advance()
-      self.parse_assign()
-    } else {
-      -1
-    }
-    decls.push(self.prog.node(Declarator, pat, init, 0, 0))
-    if !self.eat(Comma) {
-      break
-    }
-  }
+  let decls = self.parse_declarators(kind)
   self.eat_semi()
   let (off, n) = self.prog.edge_list(decls)
   self.prog.node(VarDecl, kind, off, n, 0)
@@ -572,10 +532,20 @@ fn Parser::parse_var_decl_no_semi(
   self : Parser,
   kind : Int,
 ) -> Int raise ParseError {
+  let decls = self.parse_declarators(kind)
+  let (off, n) = self.prog.edge_list(decls)
+  self.prog.node(VarDecl, kind, off, n, 0)
+}
+
+///|
+fn Parser::parse_declarators(
+  self : Parser,
+  kind : Int,
+) -> Array[Int] raise ParseError {
   let sc = if kind == 0 { self.nearest_var_scope() } else { self.scope }
   let decls : Array[Int] = []
   while true {
-    let pat = self.parse_pattern(true, sc, false)
+    let pat = self.parse_pattern(sc, false)
     let init = if self.lx.tok == Assign {
       self.advance()
       self.parse_assign()
@@ -587,8 +557,7 @@ fn Parser::parse_var_decl_no_semi(
       break
     }
   }
-  let (off, n) = self.prog.edge_list(decls)
-  self.prog.node(VarDecl, kind, off, n, 0)
+  decls
 }
 
 ///|
@@ -696,7 +665,7 @@ fn Parser::parse_try(self : Parser) -> Int raise ParseError {
     self.scope = self.prog.push_scope(saved, scope_catch)
     let mut param = -1
     if self.eat(LParen) {
-      param = self.parse_pattern(true, self.scope, false)
+      param = self.parse_pattern(self.scope, false)
       self.expect(RParen)
     }
     let body = self.parse_block()
@@ -783,10 +752,10 @@ fn Parser::parse_function_rest(
   while self.lx.tok != RParen && self.lx.tok != Eof {
     if self.lx.tok == Ellipsis {
       self.advance()
-      let inner = self.parse_pattern(true, fscope, false)
+      let inner = self.parse_pattern(fscope, false)
       params.push(self.prog.node(PatRest, inner, 0, 0, 0))
     } else {
-      params.push(self.parse_pattern(true, fscope, true))
+      params.push(self.parse_pattern(fscope, true))
     }
     if !self.eat(Comma) {
       break

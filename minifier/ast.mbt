@@ -1,5 +1,4 @@
 ///|
-#warnings("-implicit_impl_as_method")
 priv enum Nk {
   Ident
   NumberLit
@@ -72,7 +71,6 @@ priv enum Nk {
 extend Nk with @debug.Debug::{to_repr}
 
 ///|
-#warnings("-implicit_impl_as_method")
 priv enum Op {
   Assign
   Add
