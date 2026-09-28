@@ -1,9 +1,4 @@
 ///|
-pub suberror ParseError {
-  Unexpected(String)
-}
-
-///|
 priv struct Parser {
   program : Program
   lexer : Lexer
@@ -24,6 +19,27 @@ fn Parser::new(source : String) -> Parser {
 }
 
 ///|
+fn Parser::error_position(self : Parser) -> Position {
+  position_at(self.lexer.source, self.lexer.start)
+}
+
+///|
+/// The current token was not the expected one.
+fn Parser::unexpected(self : Parser, expected : String) -> ParseError {
+  UnexpectedToken(
+    self.error_position(),
+    expected,
+    self.lexer.token.to_repr().to_string(),
+  )
+}
+
+///|
+/// Any syntax error that is not simply an unexpected token.
+fn Parser::syntax_error(self : Parser, message : String) -> ParseError {
+  Syntax(self.error_position(), message)
+}
+
+///|
 fn Parser::advance(self : Parser) -> Unit raise ParseError {
   self.lexer.next()
 }
@@ -31,9 +47,7 @@ fn Parser::advance(self : Parser) -> Unit raise ParseError {
 ///|
 fn Parser::expect(self : Parser, t : Token) -> Unit raise ParseError {
   if self.lexer.token != t {
-    raise Unexpected(
-      "expected \{t.to_repr()}, got \{self.lexer.token.to_repr()}",
-    )
+    raise self.unexpected(t.to_repr().to_string())
   }
   self.advance()
 }
@@ -171,7 +185,7 @@ fn Parser::parse_pattern_atom(
     }
     LeftBracket => self.parse_array_pattern(scope_id)
     LeftBrace => self.parse_object_pattern(scope_id)
-    _ => raise Unexpected("pattern expected, got \{self.lexer.token.to_repr()}")
+    _ => raise self.unexpected("pattern")
   }
 }
 
@@ -272,7 +286,7 @@ fn parse_program(source : String) -> Program raise ParseError {
   let (offset, n) = p.program.edge_list(statements)
   p.program.root = p.program.node(Block, offset, n, 0, 0)
   guard p.program.cover_defaults == 0 else {
-    raise Unexpected("shorthand initializer requires a binding pattern")
+    raise p.syntax_error("shorthand initializer requires a binding pattern")
   }
   p.program
 }
@@ -287,7 +301,7 @@ fn Parser::parse_statement_list(
     output.push(self.parse_statement())
   }
   guard !top || self.lexer.token == EndOfFile else {
-    raise Unexpected("unexpected top-level }")
+    raise self.syntax_error("unexpected top-level }")
   }
   output
 }
@@ -453,7 +467,7 @@ fn Parser::parse_while(self : Parser) -> Int raise ParseError {
 fn Parser::parse_do_while(self : Parser) -> Int raise ParseError {
   let body = self.parse_statement()
   if !(self.lexer.token == Identifier && self.lexer.is_keyword("while")) {
-    raise Unexpected("while expected")
+    raise self.unexpected("while")
   }
   self.advance()
   self.expect(LeftParenthesis)
@@ -511,7 +525,7 @@ fn Parser::parse_for(self : Parser) -> Int raise ParseError {
       )
     }
     if self.lexer.token == Identifier && self.lexer.is_keyword("in") {
-      guard !is_await else { raise Unexpected("for await requires of") }
+      guard !is_await else { raise self.syntax_error("for await requires of") }
       self.advance()
       let right = self.parse_expression()
       self.expect(RightParenthesis)
@@ -543,7 +557,7 @@ fn Parser::parse_for(self : Parser) -> Int raise ParseError {
       )
     }
     if self.lexer.token == Identifier && self.lexer.is_keyword("in") {
-      guard !is_await else { raise Unexpected("for await requires of") }
+      guard !is_await else { raise self.syntax_error("for await requires of") }
       self.assignment_pattern(e)
       self.advance()
       let right = self.parse_expression()
@@ -554,7 +568,7 @@ fn Parser::parse_for(self : Parser) -> Int raise ParseError {
     }
     initializer = e
   }
-  guard !is_await else { raise Unexpected("for await requires of") }
+  guard !is_await else { raise self.syntax_error("for await requires of") }
   self.expect(Semicolon)
   let condition = if self.lexer.token == Semicolon {
     -1
@@ -623,7 +637,7 @@ fn Parser::parse_return(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::parse_throw(self : Parser) -> Int raise ParseError {
   if self.lexer.newline_before {
-    raise Unexpected("newline after throw")
+    raise self.syntax_error("newline after throw")
   }
   let argument = self.parse_expression()
   self.eat_semicolon()
@@ -693,7 +707,7 @@ fn Parser::parse_switch(self : Parser) -> Int raise ParseError {
       self.advance()
       -1
     } else {
-      raise Unexpected("case/default expected")
+      raise self.unexpected("case or default")
     }
     self.expect(Colon)
     let statements : Array[Int] = []
@@ -960,7 +974,7 @@ fn Parser::parse_property_key(self : Parser) -> Int raise ParseError {
       self.advance()
       n
     }
-    _ => raise Unexpected("property key expected")
+    _ => raise self.unexpected("property key")
   }
 }
 
@@ -1002,7 +1016,7 @@ fn Parser::parse_assignment(self : Parser) -> Int raise ParseError {
       self.lexer.token == RightBracket ||
       self.lexer.token == Comma {
       guard !delegated else {
-        raise Unexpected("yield* requires an expression")
+        raise self.syntax_error("yield* requires an expression")
       }
       -1
     } else {
@@ -1351,8 +1365,7 @@ fn Parser::parse_primary(self : Parser) -> Int raise ParseError {
     LeftBracket => self.parse_array_literal()
     LeftBrace => self.parse_object_literal()
     Identifier => self.parse_identifier_expression()
-    _ =>
-      raise Unexpected("expression expected, got \{self.lexer.token.to_repr()}")
+    _ => raise self.unexpected("expression")
   }
 }
 
@@ -1486,7 +1499,7 @@ fn Parser::parse_arrow_single(
   let function_scope = self.program.push_scope(outer, scope_arrow_parameters)
   self.scope = function_scope
   guard !self.lexer.newline_before else {
-    raise Unexpected("newline before arrow")
+    raise self.syntax_error("newline before arrow")
   }
   let parameter = self.declare_pattern(function_scope, name_start, name_end)
   let name_reference = -1
@@ -1555,7 +1568,7 @@ fn Parser::parse_template(self : Parser) -> Int raise ParseError {
     let e = self.parse_expression_allowing_in()
     parts.push(e)
     if self.lexer.token != RightBrace {
-      raise Unexpected("template substitution must end with }")
+      raise self.syntax_error("template substitution must end with }")
     }
     self.lexer.rescan_template_continue()
     if self.lexer.token == TemplateTail {

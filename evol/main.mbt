@@ -21,8 +21,7 @@ async fn main {
   )
   let matches = command.parse() catch {
     error => {
-      @stdio.stderr.write("evol: \{@debug.to_string(error)}\n")
-      @sys.exit(1)
+      fail(@debug.to_string(error))
       return
     }
   }
@@ -38,11 +37,16 @@ async fn main {
       @minifier.minify(source)
     }
   } catch {
-    @minifier.ParseError::Unexpected(message) => {
-      @stdio.stderr.write("evol: \{message}\n")
-      @sys.exit(1)
+    error => {
+      fail(Show::to_string(error))
       return
     }
   }
   @stdio.stdout.write(output)
+}
+
+///|
+async fn fail(message : String) -> Unit {
+  @stdio.stderr.write("evol: \{message}\n")
+  @sys.exit(1)
 }

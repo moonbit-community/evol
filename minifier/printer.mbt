@@ -118,11 +118,7 @@ fn Printer::write_reference(self : Printer, reference_id : Int) -> Unit {
 }
 
 ///|
-fn Printer::statements(
-  self : Printer,
-  offset : Int,
-  count : Int,
-) -> Unit raise ParseError {
+fn Printer::statements(self : Printer, offset : Int, count : Int) -> Unit {
   for i in 0..<count {
     self.statement(self.program.edges[offset + i])
   }
@@ -131,11 +127,7 @@ fn Printer::statements(
 ///|
 
 ///|
-fn Printer::expression_list(
-  self : Printer,
-  offset : Int,
-  count : Int,
-) -> Unit raise ParseError {
+fn Printer::expression_list(self : Printer, offset : Int, count : Int) -> Unit {
   for i in 0..<count {
     if i > 0 {
       self.write_string(",", false)
@@ -145,7 +137,7 @@ fn Printer::expression_list(
 }
 
 ///|
-fn Printer::pattern(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::pattern(self : Printer, id : Int) -> Unit {
   let n = self.program.nodes[id]
   match n.kind {
     PatternIdentifier | Identifier => self.write_reference(n.a)
@@ -223,12 +215,12 @@ fn Printer::pattern(self : Printer, id : Int) -> Unit raise ParseError {
       self.write_string("=", false)
       self.expression(n.b)
     }
-    _ => raise Unexpected("bad pattern: " + n.kind.to_repr().to_string())
+    _ => abort("bad pattern: \{n.kind.to_repr()}")
   }
 }
 
 ///|
-fn Printer::pattern_key(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::pattern_key(self : Printer, id : Int) -> Unit {
   let n = self.program.nodes[id]
   match n.kind {
     StringLiteral | NumberLiteral => self.write_span(n.a, n.b, true)
@@ -237,7 +229,7 @@ fn Printer::pattern_key(self : Printer, id : Int) -> Unit raise ParseError {
 }
 
 ///|
-fn Printer::property(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::property(self : Printer, id : Int) -> Unit {
   let n = self.program.nodes[id]
   if n.kind == PatternRest {
     self.write_string("...", false)
@@ -300,7 +292,7 @@ fn Printer::property(self : Printer, id : Int) -> Unit raise ParseError {
 }
 
 ///|
-fn Printer::parameters(self : Printer, f : Function) -> Unit raise ParseError {
+fn Printer::parameters(self : Printer, f : Function) -> Unit {
   self.write_string("(", false)
   for i in 0..<f.parameters_count {
     if i > 0 {
@@ -312,11 +304,7 @@ fn Printer::parameters(self : Printer, f : Function) -> Unit raise ParseError {
 }
 
 ///|
-fn Printer::function(
-  self : Printer,
-  id : Int,
-  with_name : Bool,
-) -> Unit raise ParseError {
+fn Printer::function(self : Printer, id : Int, with_name : Bool) -> Unit {
   let f = self.program.functions[id]
   if (f.flags & function_flag_arrow) != 0 {
     if (f.flags & function_flag_async) != 0 {
@@ -346,7 +334,7 @@ fn Printer::function(
 }
 
 ///|
-fn Printer::class(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::class(self : Printer, id : Int) -> Unit {
   let c = self.program.classes[id]
   self.write_string("class", true)
   if c.name >= 0 {
@@ -364,7 +352,7 @@ fn Printer::class(self : Printer, id : Int) -> Unit raise ParseError {
 }
 
 ///|
-fn Printer::class_member(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::class_member(self : Printer, id : Int) -> Unit {
   let n = self.program.nodes[id]
   match n.kind {
     Method => {
@@ -403,12 +391,12 @@ fn Printer::class_member(self : Printer, id : Int) -> Unit raise ParseError {
       self.write_string("static", true)
       self.block(n.a)
     }
-    _ => raise Unexpected("bad class member: " + n.kind.to_repr().to_string())
+    _ => abort("bad class member: \{n.kind.to_repr()}")
   }
 }
 
 ///|
-fn Printer::block(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::block(self : Printer, id : Int) -> Unit {
   let n = self.program.nodes[id]
   self.write_string("{", false)
   self.statements(n.a, n.b)
@@ -416,7 +404,7 @@ fn Printer::block(self : Printer, id : Int) -> Unit raise ParseError {
 }
 
 ///|
-fn Printer::expression(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::expression(self : Printer, id : Int) -> Unit {
   if id < 0 {
     return
   }
@@ -596,7 +584,7 @@ fn Printer::expression(self : Printer, id : Int) -> Unit raise ParseError {
     | PatternObject
     | PatternProperty
     | PatternDefault => self.pattern(id)
-    _ => raise Unexpected("bad expression: " + n.kind.to_repr().to_string())
+    _ => abort("bad expression: \{n.kind.to_repr()}")
   }
 }
 
@@ -617,7 +605,7 @@ fn statement_needs_semicolon(kind : NodeKind) -> Bool {
 }
 
 ///|
-fn Printer::statement(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::statement(self : Printer, id : Int) -> Unit {
   let n = self.program.nodes[id]
   match n.kind {
     ExpressionStatement => self.expression(n.a)
@@ -734,8 +722,7 @@ fn Printer::statement(self : Printer, id : Int) -> Unit raise ParseError {
       self.write_string("switch", true)
       self.write_string("(", false)
       self.expression(n.a)
-      self.write_string(")", false)
-      self.write_string("{", false)
+      self.write_string("){", false)
       for i in 0..<n.c {
         self.switch_case(self.program.edges[n.b + i])
       }
@@ -769,7 +756,7 @@ fn Printer::statement(self : Printer, id : Int) -> Unit raise ParseError {
       self.statement(n.b)
       return
     }
-    _ => raise Unexpected("bad statement: " + n.kind.to_repr().to_string())
+    _ => abort("bad statement: \{n.kind.to_repr()}")
   }
   if statement_needs_semicolon(n.kind) {
     self.write_string(";", false)
@@ -777,7 +764,7 @@ fn Printer::statement(self : Printer, id : Int) -> Unit raise ParseError {
 }
 
 ///|
-fn Printer::switch_case(self : Printer, id : Int) -> Unit raise ParseError {
+fn Printer::switch_case(self : Printer, id : Int) -> Unit {
   let n = self.program.nodes[id]
   if n.a >= 0 {
     self.write_string("case", true)
@@ -790,10 +777,7 @@ fn Printer::switch_case(self : Printer, id : Int) -> Unit raise ParseError {
 }
 
 ///|
-fn Printer::variable_declaration(
-  self : Printer,
-  n : Node,
-) -> Unit raise ParseError {
+fn Printer::variable_declaration(self : Printer, n : Node) -> Unit {
   self.write_string(
     if n.a == 0 {
       "var"
@@ -818,7 +802,7 @@ fn Printer::variable_declaration(
 }
 
 ///|
-fn print_program(program : Program) -> String raise ParseError {
+fn print_program(program : Program) -> String {
   let p = Printer::new(program)
   let root = program.nodes[program.root]
   p.statements(root.a, root.b)
@@ -826,7 +810,7 @@ fn print_program(program : Program) -> String raise ParseError {
 }
 
 ///|
-fn Printer::class_key(self : Printer, property : Node) -> Unit raise ParseError {
+fn Printer::class_key(self : Printer, property : Node) -> Unit {
   if (property.d & 2) != 0 {
     self.write_string("[", false)
     self.expression(property.a)

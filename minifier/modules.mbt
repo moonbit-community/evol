@@ -28,16 +28,14 @@ fn Parser::expect_keyword(
   self : Parser,
   keyword : String,
 ) -> Unit raise ParseError {
-  guard self.lexer.is_keyword(keyword) else {
-    raise Unexpected("expected " + keyword)
-  }
+  guard self.lexer.is_keyword(keyword) else { raise self.unexpected(keyword) }
   self.advance()
 }
 
 ///|
 fn Parser::module_name(self : Parser) -> Int raise ParseError {
   guard self.lexer.token == Identifier || self.lexer.token == StringLiteral else {
-    raise Unexpected("module name expected")
+    raise self.unexpected("module name")
   }
   self.parse_property_key()
 }
@@ -45,7 +43,7 @@ fn Parser::module_name(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::import_binding(self : Parser) -> Int raise ParseError {
   guard self.lexer.token == Identifier else {
-    raise Unexpected("import binding expected")
+    raise self.unexpected("import binding")
   }
   let reference = self.declare_symbol(0, self.lexer.start, self.lexer.end)
   self.advance()
@@ -55,7 +53,7 @@ fn Parser::import_binding(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::module_source(self : Parser) -> Int raise ParseError {
   guard self.lexer.token == StringLiteral else {
-    raise Unexpected("module source string expected")
+    raise self.unexpected("module source string")
   }
   self.parse_property_key()
 }
@@ -70,7 +68,7 @@ fn Parser::import_attributes(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::parse_import(self : Parser) -> Int raise ParseError {
   guard self.scope == 0 else {
-    raise Unexpected("import must be at module top level")
+    raise self.syntax_error("import must be at module top level")
   }
   self.expect_keyword("import")
   let bindings : Array[ImportBinding] = []
@@ -95,7 +93,9 @@ fn Parser::parse_import(self : Parser) -> Int raise ParseError {
             let name = self.program.nodes[imported]
             guard self.program.source[name.a] != '\'' &&
               self.program.source[name.a] != '"' else {
-              raise Unexpected("string import name requires a local alias")
+              raise self.syntax_error(
+                "string import name requires a local alias",
+              )
             }
             self.declare_symbol(0, name.a, name.b)
           }
@@ -118,7 +118,7 @@ fn Parser::parse_import(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::parse_export(self : Parser) -> Int raise ParseError {
   guard self.scope == 0 else {
-    raise Unexpected("export must be at module top level")
+    raise self.syntax_error("export must be at module top level")
   }
   self.expect_keyword("export")
   if self.lexer.is_keyword("default") {
@@ -186,7 +186,7 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
   guard self.program.nodes[body].kind == VariableDeclaration ||
     self.program.nodes[body].kind == FunctionDeclaration ||
     self.program.nodes[body].kind == ClassDeclaration else {
-    raise Unexpected("export declaration expected")
+    raise self.unexpected("export declaration")
   }
   self.preserve_exported_names(body)
   self.module_node(ExportDeclaration(body))
@@ -241,7 +241,7 @@ fn Printer::module_source(
   self : Printer,
   source : Int,
   attributes : Int,
-) -> Unit raise ParseError {
+) -> Unit {
   self.expression(source)
   if attributes >= 0 {
     self.write_string("with", true)
@@ -250,7 +250,7 @@ fn Printer::module_source(
 }
 
 ///|
-fn Printer::module_stmt(self : Printer, index : Int) -> Unit raise ParseError {
+fn Printer::module_stmt(self : Printer, index : Int) -> Unit {
   match self.program.modules[index] {
     Import(bindings, source, attributes) => {
       self.write_string("import", true)
@@ -330,8 +330,7 @@ fn Printer::module_stmt(self : Printer, index : Int) -> Unit raise ParseError {
       self.statement(body)
     }
     ExportDefault(body) => {
-      self.write_string("export", true)
-      self.write_string("default", true)
+      self.write_string("export default", true)
       self.expression(body)
       self.write_string(";", false)
     }

@@ -43,14 +43,14 @@ fn Parser::finish_arrow(
   is_async : Int,
 ) -> Int raise ParseError {
   guard !self.lexer.newline_before else {
-    raise Unexpected("newline before arrow")
+    raise self.syntax_error("newline before arrow")
   }
   let count = parameters.items.length()
   for index in 0..<count {
     let item = parameters.items[index]
     if self.program.nodes[item].kind == Spread {
       guard index == count - 1 && !parameters.trailing_comma else {
-        raise Unexpected("rest parameter must be last")
+        raise self.syntax_error("rest parameter must be last")
       }
     }
     self.cover_pattern(item, true)
@@ -85,11 +85,11 @@ fn Parser::finish_parenthesized(
   }
   self.scope = expression.outer_scope
   guard !expression.trailing_comma && expression.items.length() > 0 else {
-    raise Unexpected("invalid parenthesized expression")
+    raise self.syntax_error("invalid parenthesized expression")
   }
   for item in expression.items {
     guard self.program.nodes[item].kind != Spread else {
-      raise Unexpected("spread requires a parameter or argument list")
+      raise self.syntax_error("spread requires a parameter or argument list")
     }
   }
   let inner = if expression.items.length() == 1 {
@@ -165,7 +165,7 @@ fn Parser::cover_pattern(
           let element = self.program.nodes[item]
           if element.kind == Spread || element.kind == PatternRest {
             guard index == node.b - 1 && node.d == 0 else {
-              raise Unexpected(
+              raise self.syntax_error(
                 "rest binding must be last without a trailing comma",
               )
             }
@@ -173,7 +173,9 @@ fn Parser::cover_pattern(
               declaring {
               let target = self.program.nodes[element.a].kind
               guard target == Identifier || target == PatternIdentifier else {
-                raise Unexpected("object rest binding requires an identifier")
+                raise self.syntax_error(
+                  "object rest binding requires an identifier",
+                )
               }
             }
           }
@@ -196,14 +198,14 @@ fn Parser::cover_pattern(
       guard target != Assignment &&
         target != PatternDefault &&
         target != CoverDefault else {
-        raise Unexpected("rest binding cannot have a default")
+        raise self.syntax_error("rest binding cannot have a default")
       }
       self.cover_pattern(node.a, declaring)
       Node::new(PatternRest, node.a, 0, 0, 0)
     }
     Assignment => {
       guard self.program.operators[node.a] == Operator::Assignment else {
-        raise Unexpected("invalid default binding")
+        raise self.syntax_error("invalid default binding")
       }
       self.cover_pattern(node.b, declaring)
       Node::new(PatternDefault, node.b, node.c, 0, 0)
@@ -216,7 +218,7 @@ fn Parser::cover_pattern(
       Node::new(PatternDefault, node.a, node.b, 0, 0)
     }
     Member | Index if !declaring => node
-    _ => raise Unexpected("invalid binding pattern")
+    _ => raise self.syntax_error("invalid binding pattern")
   }
   self.program.nodes[id] = replacement
 }

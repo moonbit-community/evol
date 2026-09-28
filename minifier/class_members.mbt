@@ -120,7 +120,7 @@ fn Parser::parse_class_member(
         )
         return
       }
-      raise Unexpected("method parameter list expected")
+      raise self.unexpected("method parameter list")
     }
     let initializer = if self.eat(Assignment) {
       self.parse_assignment_allowing_in()
@@ -130,7 +130,7 @@ fn Parser::parse_class_member(
     guard self.lexer.token == Semicolon ||
       self.lexer.token == RightBrace ||
       self.lexer.newline_before else {
-      raise Unexpected("class field terminator expected")
+      raise self.unexpected("class field terminator")
     }
     self.eat_semicolon()
     members.push(

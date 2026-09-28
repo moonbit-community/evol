@@ -106,6 +106,26 @@ fn Lexer::restore(self : Lexer, other : LexerSnapshot) -> Unit {
 }
 
 ///|
+fn Lexer::error_position(self : Lexer) -> Position {
+  position_at(self.source, self.start)
+}
+
+///|
+fn Lexer::syntax_error(self : Lexer, message : String) -> ParseError {
+  Syntax(self.error_position(), message)
+}
+
+///|
+fn Lexer::unterminated(self : Lexer, construct : String) -> ParseError {
+  Unterminated(self.error_position(), construct)
+}
+
+///|
+fn Lexer::invalid_escape(self : Lexer, message : String) -> ParseError {
+  InvalidEscape(self.error_position(), message)
+}
+
+///|
 fn Lexer::character(self : Lexer) -> UInt16 {
   self.character_at(0)
 }
@@ -181,6 +201,7 @@ fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
         continue
       }
       if d == 42 {
+        let comment_start = self.position
         self.position = self.position + 2
         let mut closed = false
         while self.position < length {
@@ -194,7 +215,9 @@ fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
           }
           self.position = self.position + 1
         }
-        guard closed else { raise Unexpected("unterminated comment") }
+        guard closed else {
+          raise Unterminated(position_at(self.source, comment_start), "comment")
+        }
         continue
       }
     }
@@ -219,7 +242,7 @@ fn Lexer::scan_identifier(self : Lexer) -> Unit raise ParseError {
         (code >= 97 && code <= 122) ||
         (!first && code >= 48 && code <= 57)
       guard valid && !character.is_whitespace() else {
-        raise Unexpected("invalid identifier escape")
+        raise self.invalid_escape("invalid identifier escape")
       }
       self.position = end
     } else if is_identifier_continue(self.character()) &&
@@ -231,7 +254,7 @@ fn Lexer::scan_identifier(self : Lexer) -> Unit raise ParseError {
     }
     first = false
   }
-  guard !first else { raise Unexpected("identifier expected") }
+  guard !first else { raise self.syntax_error("identifier expected") }
   self.token = Identifier
   self.end = self.position
 }
@@ -311,11 +334,11 @@ fn Lexer::scan_string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
       return
     }
     guard c != '\n' && c != '\r' else {
-      raise Unexpected("newline in string literal")
+      raise self.syntax_error("newline in string literal")
     }
     if c == '\\' {
       guard self.position + 1 < self.source.length() else {
-        raise Unexpected("unterminated string escape")
+        raise self.unterminated("string escape")
       }
       self.position += 2
       if self.source[self.position - 1] == '\r' && self.character() == '\n' {
@@ -325,7 +348,7 @@ fn Lexer::scan_string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
       self.position += 1
     }
   }
-  raise Unexpected("unterminated string literal")
+  raise self.unterminated("string literal")
 }
 
 ///|
@@ -335,12 +358,12 @@ fn Lexer::scan_regex(self : Lexer) -> Unit raise ParseError {
   while self.position < self.source.length() {
     let c = self.character()
     guard !is_line_terminator(c) else {
-      raise Unexpected("newline in regular expression")
+      raise self.syntax_error("newline in regular expression")
     }
     if c == '\\' {
       guard self.position + 1 < self.source.length() &&
         !is_line_terminator(self.character_at(1)) else {
-        raise Unexpected("unterminated regular expression escape")
+        raise self.unterminated("regular expression escape")
       }
       self.position += 2
       continue
@@ -364,7 +387,7 @@ fn Lexer::scan_regex(self : Lexer) -> Unit raise ParseError {
     }
     self.position += 1
   }
-  raise Unexpected("unterminated regular expression")
+  raise self.unterminated("regular expression")
 }
 
 ///|
@@ -378,7 +401,7 @@ fn Lexer::scan_template_chunk(
     let c = self.source[self.position]
     if c == '\\' {
       guard self.position + 1 < length else {
-        raise Unexpected("unterminated template escape")
+        raise self.unterminated("template escape")
       }
       self.position += 2
       continue
@@ -401,7 +424,7 @@ fn Lexer::scan_template_chunk(
     }
     self.position = self.position + 1
   }
-  raise Unexpected("unterminated template literal")
+  raise self.unterminated("template literal")
 }
 
 ///|
@@ -663,7 +686,11 @@ fn Lexer::scan_punctuation(self : Lexer, c : Int) -> Unit raise ParseError {
         self.position = self.position + 1
         self.token = Percent
       }
-    _ => raise Unexpected("unexpected character at offset \{self.position}")
+    _ =>
+      raise UnexpectedCharacter(
+        position_at(self.source, self.position),
+        c.to_char().unwrap_or('?'),
+      )
   }
   self.end = self.position
 }
@@ -674,13 +701,21 @@ fn identifier_escape(
   start : Int,
 ) -> (Char, Int) raise ParseError {
   guard start + 2 < source.length() && source[start + 1] == 'u' else {
-    raise Unexpected("expected Unicode identifier escape")
+    raise InvalidEscape(
+      position_at(source, start),
+      "expected Unicode identifier escape",
+    )
   }
   let braced = source[start + 2] == '{'
   let begin = start + (if braced { 3 } else { 2 })
   let (value, end) = for value = 0, position = begin {
     if braced && position < source.length() && source[position] == '}' {
-      guard position > begin else { raise Unexpected("empty Unicode escape") }
+      guard position > begin else {
+        raise InvalidEscape(
+          position_at(source, position),
+          "empty Unicode escape",
+        )
+      }
       break (value, position + 1)
     }
     if !braced && position == begin + 4 {
@@ -689,14 +724,20 @@ fn identifier_escape(
     guard position < source.length() &&
       is_hex(source[position]) &&
       value <= 0x10FFFF / 16 else {
-      raise Unexpected("invalid Unicode escape")
+      raise InvalidEscape(
+        position_at(source, position),
+        "invalid Unicode escape",
+      )
     }
     let c = source[position].to_int()
     let digit = if c <= 57 { c - 48 } else if c <= 70 { c - 55 } else { c - 87 }
     continue value * 16 + digit, position + 1
   }
   guard value.to_char() is Some(character) else {
-    raise Unexpected("invalid Unicode code point")
+    raise InvalidEscape(
+      position_at(source, start),
+      "invalid Unicode code point",
+    )
   }
   (character, end)
 }
