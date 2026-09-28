@@ -451,12 +451,8 @@ fn Printer::expression(self : Printer, id : Int) -> Unit {
     ClassDeclaration => self.class(n.a)
     Unary => {
       let operator = self.program.operators[n.a]
-      if n.b < 0 {
-        self.write_string(operator_text(operator), operator_is_word(operator))
-      } else {
-        self.write_string(operator_text(operator), operator_is_word(operator))
-        self.expression(n.b)
-      }
+      self.write_string(operator_text(operator), operator_is_word(operator))
+      self.expression(n.b)
     }
     Update => {
       let operator = self.program.operators[n.a]

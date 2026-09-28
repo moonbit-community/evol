@@ -152,21 +152,10 @@ fn Lexer::peek(self : Lexer, offset : Int) -> Int {
 
 ///|
 fn Lexer::is_keyword(self : Lexer, keyword : String) -> Bool {
-  if self.token != Identifier {
-    return false
-  }
-  let n = keyword.length()
-  if self.end - self.start != n {
-    return false
-  }
-  let mut i = 0
-  while i < n {
-    if self.source[self.start + i] != keyword[i] {
-      return false
-    }
-    i = i + 1
-  }
-  true
+  self.token == Identifier &&
+  self.source
+  .view(start_offset=self.start, end_offset=self.end)
+  .equal_to_string(keyword)
 }
 
 ///|
@@ -466,232 +455,84 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
     self.scan_template_chunk(true)
     return
   }
-  if c == '/' {
-    let d = self.peek(1)
-    if d == 61 {
-      self.position = self.position + 2
-      self.token = DivisionAssignment
-      self.end = self.position
-      return
-    }
-    self.position = self.position + 1
-    self.token = Slash
-    self.end = self.position
-    return
-  }
-  self.scan_punctuation(c.to_int())
+  self.scan_punctuation()
 }
 
 ///|
-fn Lexer::scan_punctuation(self : Lexer, c : Int) -> Unit raise ParseError {
-  match c {
-    40 => {
-      self.position = self.position + 1
-      self.token = LeftParenthesis
-    }
-    41 => {
-      self.position = self.position + 1
-      self.token = RightParenthesis
-    }
-    91 => {
-      self.position = self.position + 1
-      self.token = LeftBracket
-    }
-    93 => {
-      self.position = self.position + 1
-      self.token = RightBracket
-    }
-    123 => {
-      self.position = self.position + 1
-      self.token = LeftBrace
-    }
-    125 => {
-      self.position = self.position + 1
-      self.token = RightBrace
-    }
-    59 => {
-      self.position = self.position + 1
-      self.token = Semicolon
-    }
-    44 => {
-      self.position = self.position + 1
-      self.token = Comma
-    }
-    58 => {
-      self.position = self.position + 1
-      self.token = Colon
-    }
-    126 => {
-      self.position = self.position + 1
-      self.token = Tilde
-    }
-    63 =>
-      if self.peek(1) == 46 && !is_digit(self.character_at(2)) {
-        self.position = self.position + 2
-        self.token = OptionalChaining
-      } else if self.peek(1) == 63 && self.peek(2) == 61 {
-        self.position = self.position + 3
-        self.token = NullishCoalescingAssignment
-      } else if self.peek(1) == 63 {
-        self.position = self.position + 2
-        self.token = NullishCoalescing
+fn Lexer::scan_punctuation(self : Lexer) -> Unit raise ParseError {
+  let (token, rest) : (Token, StringView) = lexmatch
+    self.source.view(start_offset=self.position) with longest {
+    (re"^\(", after=rest) => (LeftParenthesis, rest)
+    (re"^\)", after=rest) => (RightParenthesis, rest)
+    (re"^\[", after=rest) => (LeftBracket, rest)
+    (re"^\]", after=rest) => (RightBracket, rest)
+    (re"^[{]", after=rest) => (LeftBrace, rest)
+    (re"^[}]", after=rest) => (RightBrace, rest)
+    (re"^;", after=rest) => (Semicolon, rest)
+    (re"^,", after=rest) => (Comma, rest)
+    (re"^:", after=rest) => (Colon, rest)
+    (re"^~", after=rest) => (Tilde, rest)
+    (re"^\?", after=rest) => (Question, rest)
+    (re"^\?\?", after=rest) => (NullishCoalescing, rest)
+    (re"^\?\?=", after=rest) => (NullishCoalescingAssignment, rest)
+    (re"^\.", after=rest) => (Dot, rest)
+    (re"^\.\.\.", after=rest) => (Ellipsis, rest)
+    (re"^=", after=rest) => (Assignment, rest)
+    (re"^=>", after=rest) => (Arrow, rest)
+    (re"^==", after=rest) => (Equal, rest)
+    (re"^===", after=rest) => (StrictlyEqual, rest)
+    (re"^!", after=rest) => (LogicalNot, rest)
+    (re"^!=", after=rest) => (NotEqual, rest)
+    (re"^!==", after=rest) => (StrictlyNotEqual, rest)
+    (re"^<", after=rest) => (LessThan, rest)
+    (re"^<=", after=rest) => (LessThanOrEqual, rest)
+    (re"^<<", after=rest) => (ShiftLeft, rest)
+    (re"^<<=", after=rest) => (LeftShiftAssignment, rest)
+    (re"^>", after=rest) => (GreaterThan, rest)
+    (re"^>=", after=rest) => (GreaterThanOrEqual, rest)
+    (re"^>>", after=rest) => (ShiftRight, rest)
+    (re"^>>=", after=rest) => (RightShiftAssignment, rest)
+    (re"^>>>", after=rest) => (UnsignedShiftRight, rest)
+    (re"^>>>=", after=rest) => (UnsignedRightShiftAssignment, rest)
+    (re"^&", after=rest) => (BitwiseAnd, rest)
+    (re"^&=", after=rest) => (BitwiseAndAssignment, rest)
+    (re"^&&", after=rest) => (LogicalAnd, rest)
+    (re"^&&=", after=rest) => (LogicalAndAssignment, rest)
+    (re"^\|", after=rest) => (BitwiseOr, rest)
+    (re"^\|=", after=rest) => (BitwiseOrAssignment, rest)
+    (re"^\|\|", after=rest) => (LogicalOr, rest)
+    (re"^\|\|=", after=rest) => (LogicalOrAssignment, rest)
+    (re"^\^", after=rest) => (BitwiseXor, rest)
+    (re"^\^=", after=rest) => (BitwiseXorAssignment, rest)
+    (re"^\+", after=rest) => (Plus, rest)
+    (re"^\+\+", after=rest) => (Increment, rest)
+    (re"^\+=", after=rest) => (AdditionAssignment, rest)
+    (re"^-", after=rest) => (Minus, rest)
+    (re"^--", after=rest) => (Decrement, rest)
+    (re"^-=", after=rest) => (SubtractionAssignment, rest)
+    (re"^\*", after=rest) => (Asterisk, rest)
+    (re"^\*\*", after=rest) => (ExponentiationOperator, rest)
+    (re"^\*=", after=rest) => (MultiplicationAssignment, rest)
+    (re"^\*\*=", after=rest) => (ExponentiationAssignment, rest)
+    (re"^%", after=rest) => (Percent, rest)
+    (re"^%=", after=rest) => (ModuloAssignment, rest)
+    (re"^/", after=rest) => (Slash, rest)
+    (re"^/=", after=rest) => (DivisionAssignment, rest)
+    (re"^\?\.", after=rest) =>
+      // Before a digit, ? starts a conditional and the dot belongs to a number.
+      if is_digit(self.character_at(2)) {
+        (Question, self.source.view(start_offset=self.position + 1))
       } else {
-        self.position = self.position + 1
-        self.token = Question
-      }
-    46 =>
-      if self.peek(1) == 46 && self.peek(2) == 46 {
-        self.position = self.position + 3
-        self.token = Ellipsis
-      } else {
-        self.position = self.position + 1
-        self.token = Dot
-      }
-    61 =>
-      if self.peek(1) == 62 {
-        self.position = self.position + 2
-        self.token = Arrow
-      } else if self.peek(1) == 61 && self.peek(2) == 61 {
-        self.position = self.position + 3
-        self.token = StrictlyEqual
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = Equal
-      } else {
-        self.position = self.position + 1
-        self.token = Assignment
-      }
-    33 =>
-      if self.peek(1) == 61 && self.peek(2) == 61 {
-        self.position = self.position + 3
-        self.token = StrictlyNotEqual
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = NotEqual
-      } else {
-        self.position = self.position + 1
-        self.token = LogicalNot
-      }
-    60 =>
-      if self.peek(1) == 60 && self.peek(2) == 61 {
-        self.position = self.position + 3
-        self.token = LeftShiftAssignment
-      } else if self.peek(1) == 60 {
-        self.position = self.position + 2
-        self.token = ShiftLeft
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = LessThanOrEqual
-      } else {
-        self.position = self.position + 1
-        self.token = LessThan
-      }
-    62 =>
-      if self.peek(1) == 62 && self.peek(2) == 62 && self.peek(3) == 61 {
-        self.position = self.position + 4
-        self.token = UnsignedRightShiftAssignment
-      } else if self.peek(1) == 62 && self.peek(2) == 62 {
-        self.position = self.position + 3
-        self.token = UnsignedShiftRight
-      } else if self.peek(1) == 62 && self.peek(2) == 61 {
-        self.position = self.position + 3
-        self.token = RightShiftAssignment
-      } else if self.peek(1) == 62 {
-        self.position = self.position + 2
-        self.token = ShiftRight
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = GreaterThanOrEqual
-      } else {
-        self.position = self.position + 1
-        self.token = GreaterThan
-      }
-    38 =>
-      if self.peek(1) == 38 && self.peek(2) == 61 {
-        self.position = self.position + 3
-        self.token = LogicalAndAssignment
-      } else if self.peek(1) == 38 {
-        self.position = self.position + 2
-        self.token = LogicalAnd
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = BitwiseAndAssignment
-      } else {
-        self.position = self.position + 1
-        self.token = BitwiseAnd
-      }
-    124 =>
-      if self.peek(1) == 124 && self.peek(2) == 61 {
-        self.position = self.position + 3
-        self.token = LogicalOrAssignment
-      } else if self.peek(1) == 124 {
-        self.position = self.position + 2
-        self.token = LogicalOr
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = BitwiseOrAssignment
-      } else {
-        self.position = self.position + 1
-        self.token = BitwiseOr
-      }
-    94 =>
-      if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = BitwiseXorAssignment
-      } else {
-        self.position = self.position + 1
-        self.token = BitwiseXor
-      }
-    43 =>
-      if self.peek(1) == 43 {
-        self.position = self.position + 2
-        self.token = Increment
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = AdditionAssignment
-      } else {
-        self.position = self.position + 1
-        self.token = Plus
-      }
-    45 =>
-      if self.peek(1) == 45 {
-        self.position = self.position + 2
-        self.token = Decrement
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = SubtractionAssignment
-      } else {
-        self.position = self.position + 1
-        self.token = Minus
-      }
-    42 =>
-      if self.peek(1) == 42 && self.peek(2) == 61 {
-        self.position = self.position + 3
-        self.token = ExponentiationAssignment
-      } else if self.peek(1) == 42 {
-        self.position = self.position + 2
-        self.token = ExponentiationOperator
-      } else if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = MultiplicationAssignment
-      } else {
-        self.position = self.position + 1
-        self.token = Asterisk
-      }
-    37 =>
-      if self.peek(1) == 61 {
-        self.position = self.position + 2
-        self.token = ModuloAssignment
-      } else {
-        self.position = self.position + 1
-        self.token = Percent
+        (OptionalChaining, rest)
       }
     _ =>
       raise UnexpectedCharacter(
         position_at(self.source, self.position),
-        c.to_char().unwrap_or('?'),
+        self.character().to_int().to_char().unwrap_or('?'),
       )
   }
+  self.token = token
+  self.position = self.source.length() - rest.length()
   self.end = self.position
 }
 
