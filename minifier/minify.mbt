@@ -1,9 +1,9 @@
 ///|
-/// Removes unnecessary whitespace and renames local bindings.
-/// Top-level names and names exposed to dynamic scope are preserved.
+/// Removes unnecessary whitespace and renames local and top-level bindings.
+/// Public export names and names exposed to dynamic scope are preserved.
 /// Raises ParseError when the input cannot be parsed.
 pub fn minify(source : String) -> String raise ParseError {
-  minify_with(source, false)
+  minify_with(source, true)
 }
 
 ///|

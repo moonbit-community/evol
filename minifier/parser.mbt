@@ -844,7 +844,7 @@ fn Parser::function_tail(
     parameters_offset: offset,
     parameters_count: n,
     body,
-    flags: is_async * function_async + is_generator * function_generator,
+    flags: is_async * FUNCTION_ASYNC + is_generator * FUNCTION_GENERATOR,
   })
   self.program.functions.length() - 1
 }
@@ -1486,7 +1486,7 @@ fn Parser::single_arrow(
     parameters_offset: offset,
     parameters_count: n,
     body,
-    flags: function_arrow + is_async * function_async + expr_body,
+    flags: FUNCTION_ARROW + is_async * FUNCTION_ASYNC + expr_body,
   })
   let function_id = self.program.functions.length() - 1
   self.program.node(ArrowExpression, function_id, 0, 0, 0)
@@ -1497,7 +1497,7 @@ fn Parser::arrow_body(self : Parser) -> (Int, Int) raise ParseError {
   if self.lexer.token == LeftBrace {
     (self.function_body(), 0)
   } else {
-    (self.assignment(), function_expression_body)
+    (self.assignment(), FUNCTION_EXPRESSION_BODY)
   }
 }
 

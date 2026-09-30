@@ -138,16 +138,16 @@ priv struct Function {
 }
 
 ///|
-let function_async : Int = 1
+const FUNCTION_ASYNC : Int = 1
 
 ///|
-let function_generator : Int = 2
+const FUNCTION_GENERATOR : Int = 2
 
 ///|
-let function_arrow : Int = 4
+const FUNCTION_ARROW : Int = 4
 
 ///|
-let function_expression_body : Int = 8
+const FUNCTION_EXPRESSION_BODY : Int = 8
 
 ///|
 #valtype

@@ -12,9 +12,6 @@ This repository is a MoonBit workspace with two modules:
 
 ## Scope
 
-`evol` intentionally does no dead-code elimination or other AST transforms;
-the MoonBit compiler already emits tight code. The focus is whitespace removal
-and local identifier mangling, which account for most of the size reduction.
+`evol` intentionally does no dead-code elimination or other AST transforms; the MoonBit compiler already emits tight code. The focus is whitespace removal and identifier mangling, which account for most of the size reduction.
 
-The CLI exits with a nonzero status on input or argument errors. `--help` and
-`--version` exit successfully.
+The CLI exits with a nonzero status on input or argument errors. `--help` and `--version` exit successfully.

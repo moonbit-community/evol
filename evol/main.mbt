@@ -6,9 +6,9 @@ async fn main {
     version="0.1.0",
     flags=[
       @argparse.FlagArg::FlagArg(
-        "toplevel",
-        long="toplevel",
-        about="also rename top-level bindings",
+        "no-toplevel",
+        long="no-toplevel",
+        about="keep top-level binding names",
       ),
     ],
     positionals=[
@@ -25,16 +25,16 @@ async fn main {
       return
     }
   }
-  let top_level = matches.flags.get("toplevel").unwrap_or(false)
+  let top_level = !matches.flags.get("no-toplevel").unwrap_or(false)
   let source = match matches.values.get("input") {
     Some(paths) if paths.length() > 0 => @fs.read_file(paths[0]).text()
     _ => @stdio.stdin.read_all().text()
   }
   let output = try {
     if top_level {
-      @minifier.minify_with(source, true)
-    } else {
       @minifier.minify(source)
+    } else {
+      @minifier.minify_with(source, false)
     }
   } catch {
     error => {

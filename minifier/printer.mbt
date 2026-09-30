@@ -238,10 +238,10 @@ fn Printer::property(self : Printer, id : Int) -> Unit {
     } else if n.c == 2 {
       self.text("set", true)
     } else {
-      if (f.flags & function_async) != 0 {
+      if (f.flags & FUNCTION_ASYNC) != 0 {
         self.text("async", true)
       }
-      if (f.flags & function_generator) != 0 {
+      if (f.flags & FUNCTION_GENERATOR) != 0 {
         self.text("*", false)
       }
     }
@@ -301,24 +301,24 @@ fn Printer::parameters(self : Printer, f : Function) -> Unit {
 ///|
 fn Printer::function(self : Printer, id : Int, with_name : Bool) -> Unit {
   let f = self.program.functions[id]
-  if (f.flags & function_arrow) != 0 {
-    if (f.flags & function_async) != 0 {
+  if (f.flags & FUNCTION_ARROW) != 0 {
+    if (f.flags & FUNCTION_ASYNC) != 0 {
       self.text("async", true)
     }
     self.parameters(f)
     self.text("=>", false)
-    if (f.flags & function_expression_body) != 0 {
+    if (f.flags & FUNCTION_EXPRESSION_BODY) != 0 {
       self.expression(f.body)
     } else {
       self.block(f.body)
     }
     return
   }
-  if (f.flags & function_async) != 0 {
+  if (f.flags & FUNCTION_ASYNC) != 0 {
     self.text("async", true)
   }
   self.text("function", true)
-  if (f.flags & function_generator) != 0 {
+  if (f.flags & FUNCTION_GENERATOR) != 0 {
     self.text("*", false)
   }
   if with_name && f.name >= 0 {
@@ -360,10 +360,10 @@ fn Printer::class_member(self : Printer, id : Int) -> Unit {
       } else if n.c == 2 {
         self.text("set", true)
       } else {
-        if (f.flags & function_async) != 0 {
+        if (f.flags & FUNCTION_ASYNC) != 0 {
           self.text("async", true)
         }
-        if (f.flags & function_generator) != 0 {
+        if (f.flags & FUNCTION_GENERATOR) != 0 {
           self.text("*", false)
         }
       }

@@ -68,7 +68,7 @@ fn Parser::finish_arrow(
     parameters_offset: offset,
     parameters_count: count,
     body,
-    flags: function_arrow + is_async * function_async + expr_body,
+    flags: FUNCTION_ARROW + is_async * FUNCTION_ASYNC + expr_body,
   })
   self.program.node(ArrowExpression, index, 0, 0, 0)
 }
