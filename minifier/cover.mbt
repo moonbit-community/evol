@@ -21,10 +21,10 @@ fn Parser::parenthesized(self : Parser) -> Parenthesized raise ParseError {
   let mut trailing_comma = false
   while self.lexer.token != RightParenthesis {
     let item = if self.eat(Ellipsis) {
-      let inner = self.parse_assignment_allowing_in()
+      let inner = self.assignment_with_in()
       self.program.node(Spread, inner, 0, 0, 0)
     } else {
-      self.parse_assignment_allowing_in()
+      self.assignment_with_in()
     }
     items.push(item)
     if !self.eat(Comma) {
@@ -58,7 +58,7 @@ fn Parser::finish_arrow(
   let saved_generator = self.in_generator
   self.in_generator = false
   self.expect(Arrow)
-  let (body, expr_body) = self.parse_arrow_body()
+  let (body, expr_body) = self.arrow_body()
   self.in_generator = saved_generator
   self.scope = parameters.outer_scope
   let (offset, count) = self.program.edge_list(parameters.items)
@@ -68,7 +68,7 @@ fn Parser::finish_arrow(
     parameters_offset: offset,
     parameters_count: count,
     body,
-    flags: function_flag_arrow + is_async * function_flag_async + expr_body,
+    flags: function_arrow + is_async * function_async + expr_body,
   })
   self.program.node(ArrowExpression, index, 0, 0, 0)
 }
@@ -102,7 +102,7 @@ fn Parser::finish_parenthesized(
 }
 
 ///|
-fn Parser::parse_async_parenthesized(
+fn Parser::async_parentheses(
   self : Parser,
   name_start : Int,
   name_end : Int,

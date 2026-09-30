@@ -1,13 +1,13 @@
 ///|
-fn name_from_index(n : Int) -> String {
+fn short_name(n : Int) -> String {
   let first = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$"
   let rest = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$0123456789"
-  let string_builder = StringBuilder()
-  string_builder.write_char(first.get_char(n % 54).unwrap())
+  let builder = StringBuilder()
+  builder.write_char(first.get_char(n % 54).unwrap())
   for remaining = n / 54; remaining > 0; remaining = (remaining - 1) / 64 {
-    string_builder.write_char(rest.get_char((remaining - 1) % 64).unwrap())
+    builder.write_char(rest.get_char((remaining - 1) % 64).unwrap())
   }
-  string_builder.to_string()
+  builder.to_string()
 }
 
 ///|
@@ -49,18 +49,18 @@ fn mangle(program : Program, rename_top_level : Bool) -> Unit {
     let s = program.symbols[i]
     let root_index = program.symbol_root(i)
     let root = program.symbols[root_index]
-    let flags = if (s.flags & symbol_must_not_rename) != 0 ||
+    let flags = if (s.flags & symbol_preserved) != 0 ||
       s.name == name_arguments ||
       program.preserved_names.contains(s.name) ||
       (s.scope == 0 && !rename_top_level) {
-      root.flags | symbol_must_not_rename
+      root.flags | symbol_preserved
     } else {
       root.flags
     }
     if flags != root.flags {
       program.symbols[root_index] = { ..root, flags, }
     }
-    if (flags & symbol_must_not_rename) != 0 {
+    if (flags & symbol_preserved) != 0 {
       reserved[symbol_name(program, i)] = true
     }
   }
@@ -69,7 +69,7 @@ fn mangle(program : Program, rename_top_level : Bool) -> Unit {
   })
   for index in 0..<program.symbols.length() {
     let symbol = program.symbols[index]
-    guard symbol.link < 0 && (symbol.flags & symbol_must_not_rename) == 0 else {
+    guard symbol.link < 0 && (symbol.flags & symbol_preserved) == 0 else {
       continue
     }
     declarations[symbol.scope].push(index)
@@ -88,7 +88,7 @@ fn mangle(program : Program, rename_top_level : Bool) -> Unit {
     }
   }
   let candidates = program.generated_names
-  let blocked_in_scope : Array[Int] = []
+  let blocked : Array[Int] = []
   let mut candidate_index = 0
   // Scope allocation is preorder; ancestors receive names before descendants.
   for scope in 0..<program.scopes.length() {
@@ -106,20 +106,20 @@ fn mangle(program : Program, rename_top_level : Bool) -> Unit {
     for symbol, _ in captured[scope] {
       let slot = program.symbols[symbol].name_slot
       if slot >= 0 {
-        blocked_in_scope[slot] = scope
+        blocked[slot] = scope
       }
     }
     let mut slot = 0
     for index in targets {
-      while slot < blocked_in_scope.length() && blocked_in_scope[slot] == scope {
+      while slot < blocked.length() && blocked[slot] == scope {
         slot += 1
       }
       while slot >= candidates.length() {
-        let candidate = name_from_index(candidate_index)
+        let candidate = short_name(candidate_index)
         candidate_index += 1
         if !reserved.contains(candidate) {
           candidates.push(candidate)
-          blocked_in_scope.push(-1)
+          blocked.push(-1)
         }
       }
       program.symbols[index] = { ..program.symbols[index], name_slot: slot, }
@@ -138,7 +138,7 @@ fn reserve_capture(
   symbol : Int,
 ) -> Unit {
   let binding = program.symbols[symbol]
-  guard (binding.flags & symbol_must_not_rename) == 0 else { return }
+  guard (binding.flags & symbol_preserved) == 0 else { return }
   for current = scope {
     guard current >= 0 && current != binding.scope else { break }
     guard !captured[current].contains(symbol) else { break }

@@ -14,8 +14,8 @@ pub fn minify_with(
   source : String,
   rename_top_level : Bool,
 ) -> String raise ParseError {
-  let program = parse_program(source)
+  let program = parse(source)
   resolve(program)
   mangle(program, rename_top_level)
-  print_program(program)
+  print(program)
 }

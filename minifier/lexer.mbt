@@ -215,7 +215,7 @@ fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
 }
 
 ///|
-fn Lexer::scan_identifier(self : Lexer) -> Unit raise ParseError {
+fn Lexer::identifier(self : Lexer) -> Unit raise ParseError {
   if self.character() == '#' {
     self.position += 1
   }
@@ -249,7 +249,7 @@ fn Lexer::scan_identifier(self : Lexer) -> Unit raise ParseError {
 }
 
 ///|
-fn Lexer::scan_digits(self : Lexer, is_valid : (UInt16) -> Bool) -> Unit {
+fn Lexer::digits(self : Lexer, is_valid : (UInt16) -> Bool) -> Unit {
   let length = self.source.length()
   while self.position < length {
     let c = self.character()
@@ -262,33 +262,33 @@ fn Lexer::scan_digits(self : Lexer, is_valid : (UInt16) -> Bool) -> Unit {
 }
 
 ///|
-fn Lexer::scan_number(self : Lexer) -> Unit {
+fn Lexer::number(self : Lexer) -> Unit {
   let c = self.character()
   if c == '0' {
     let d = self.character_at(1)
     if d == 'x' || d == 'X' {
       self.position = self.position + 2
-      self.scan_digits(is_hex)
+      self.digits(is_hex)
       self.finish_number()
       return
     }
     if d == 'b' || d == 'B' {
       self.position = self.position + 2
-      self.scan_digits(x => x == '0' || x == '1')
+      self.digits(x => x == '0' || x == '1')
       self.finish_number()
       return
     }
     if d == 'o' || d == 'O' {
       self.position = self.position + 2
-      self.scan_digits(is_oct)
+      self.digits(is_oct)
       self.finish_number()
       return
     }
   }
-  self.scan_digits(is_digit)
+  self.digits(is_digit)
   if self.character() == '.' {
     self.position = self.position + 1
-    self.scan_digits(is_digit)
+    self.digits(is_digit)
   }
   let e = self.character()
   if e == 'e' || e == 'E' {
@@ -297,7 +297,7 @@ fn Lexer::scan_number(self : Lexer) -> Unit {
     if s == '+' || s == '-' {
       self.position = self.position + 1
     }
-    self.scan_digits(is_digit)
+    self.digits(is_digit)
   }
   self.finish_number()
 }
@@ -312,7 +312,7 @@ fn Lexer::finish_number(self : Lexer) -> Unit {
 }
 
 ///|
-fn Lexer::scan_string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
+fn Lexer::string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
   self.position += 1
   while self.position < self.source.length() {
     let c = self.character()
@@ -341,7 +341,7 @@ fn Lexer::scan_string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
 }
 
 ///|
-fn Lexer::scan_regex(self : Lexer) -> Unit raise ParseError {
+fn Lexer::regex(self : Lexer) -> Unit raise ParseError {
   self.position += 1
   let mut in_class = false
   while self.position < self.source.length() {
@@ -380,7 +380,7 @@ fn Lexer::scan_regex(self : Lexer) -> Unit raise ParseError {
 }
 
 ///|
-fn Lexer::scan_template_chunk(
+fn Lexer::template_chunk(
   self : Lexer,
   is_start : Bool,
 ) -> Unit raise ParseError {
@@ -417,9 +417,9 @@ fn Lexer::scan_template_chunk(
 }
 
 ///|
-fn Lexer::rescan_template_continue(self : Lexer) -> Unit raise ParseError {
+fn Lexer::resume_template(self : Lexer) -> Unit raise ParseError {
   self.start = self.position
-  self.scan_template_chunk(false)
+  self.template_chunk(false)
 }
 
 ///|
@@ -435,31 +435,31 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
   }
   let c = self.character()
   if is_identifier_start(c) || c == '\\' {
-    self.scan_identifier()
+    self.identifier()
     return
   }
   if is_digit(c) {
-    self.scan_number()
+    self.number()
     return
   }
   if c == '.' && is_digit(self.character_at(1)) {
-    self.scan_number()
+    self.number()
     return
   }
   if c == '\'' || c == '"' {
-    self.scan_string(c)
+    self.string(c)
     return
   }
   if c == '`' {
     self.position = self.position + 1
-    self.scan_template_chunk(true)
+    self.template_chunk(true)
     return
   }
-  self.scan_punctuation()
+  self.punctuation()
 }
 
 ///|
-fn Lexer::scan_punctuation(self : Lexer) -> Unit raise ParseError {
+fn Lexer::punctuation(self : Lexer) -> Unit raise ParseError {
   let (token, rest) : (Token, StringView) = lexmatch
     self.source.view(start_offset=self.position) with longest {
     (re"^\(", after=rest) => (LeftParenthesis, rest)

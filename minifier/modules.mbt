@@ -37,7 +37,7 @@ fn Parser::module_name(self : Parser) -> Int raise ParseError {
   guard self.lexer.token == Identifier || self.lexer.token == StringLiteral else {
     raise self.unexpected("module name")
   }
-  self.parse_property_key()
+  self.property_key()
 }
 
 ///|
@@ -55,14 +55,14 @@ fn Parser::module_source(self : Parser) -> Int raise ParseError {
   guard self.lexer.token == StringLiteral else {
     raise self.unexpected("module source string")
   }
-  self.parse_property_key()
+  self.property_key()
 }
 
 ///|
 fn Parser::import_attributes(self : Parser) -> Int raise ParseError {
   guard self.lexer.is_keyword("with") else { return -1 }
   self.advance()
-  self.parse_object_literal()
+  self.object_literal()
 }
 
 ///|
@@ -127,9 +127,9 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
       self.lexer.is_keyword("class") ||
       (self.lexer.is_keyword("async") && self.peek_is_keyword("function"))
     let body = if declaration {
-      self.parse_statement()
+      self.statement()
     } else {
-      self.parse_assignment_allowing_in()
+      self.assignment_with_in()
     }
     if !declaration {
       self.eat_semicolon()
@@ -182,7 +182,7 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
     self.eat_semicolon()
     return self.module_node(ExportNames(specifiers, source, attributes))
   }
-  let body = self.parse_statement()
+  let body = self.statement()
   guard self.program.nodes[body].kind == VariableDeclaration ||
     self.program.nodes[body].kind == FunctionDeclaration ||
     self.program.nodes[body].kind == ClassDeclaration else {
@@ -201,7 +201,7 @@ fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
       let symbol = self.program.references[node.a].symbol
       self.program.symbols[symbol] = {
         ..self.program.symbols[symbol],
-        flags: symbol_must_not_rename,
+        flags: symbol_preserved,
       }
     }
     PatternArray | PatternObject =>
@@ -228,7 +228,7 @@ fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
         let symbol = self.program.references[reference].symbol
         self.program.symbols[symbol] = {
           ..self.program.symbols[symbol],
-          flags: symbol_must_not_rename,
+          flags: symbol_preserved,
         }
       }
     }
@@ -244,7 +244,7 @@ fn Printer::module_source(
 ) -> Unit {
   self.expression(source)
   if attributes >= 0 {
-    self.write_string("with", true)
+    self.text("with", true)
     self.expression(attributes)
   }
 }
@@ -253,86 +253,86 @@ fn Printer::module_source(
 fn Printer::module_stmt(self : Printer, index : Int) -> Unit {
   match self.program.modules[index] {
     Import(bindings, source, attributes) => {
-      self.write_string("import", true)
+      self.text("import", true)
       let mut has_prefix = false
       let mut named = false
       for binding in bindings {
         match binding {
           Default(reference) => {
-            self.write_reference(reference)
+            self.reference(reference)
             has_prefix = true
           }
           Namespace(reference) => {
             if has_prefix {
-              self.write_string(",", false)
+              self.text(",", false)
             }
-            self.write_string("*", false)
-            self.write_string("as", true)
-            self.write_reference(reference)
+            self.text("*", false)
+            self.text("as", true)
+            self.reference(reference)
           }
           Named(imported, reference) => {
             if named {
-              self.write_string(",", false)
+              self.text(",", false)
             } else {
               if has_prefix {
-                self.write_string(",", false)
+                self.text(",", false)
               }
-              self.write_string("{", false)
+              self.text("{", false)
               named = true
             }
             self.expression(imported)
-            self.write_string("as", true)
-            self.write_reference(reference)
+            self.text("as", true)
+            self.reference(reference)
           }
         }
       }
       if named {
-        self.write_string("}", false)
+        self.text("}", false)
       }
       if bindings.length() > 0 {
-        self.write_string("from", true)
+        self.text("from", true)
       }
       self.module_source(source, attributes)
-      self.write_string(";", false)
+      self.text(";", false)
     }
     ExportNames(specifiers, source, attributes) => {
-      self.write_string("export", true)
-      self.write_string("{", false)
+      self.text("export", true)
+      self.text("{", false)
       for index in 0..<specifiers.length() {
         if index > 0 {
-          self.write_string(",", false)
+          self.text(",", false)
         }
         let (source_name, exported) = specifiers[index]
         self.expression(source_name)
-        self.write_string("as", true)
+        self.text("as", true)
         self.expression(exported)
       }
-      self.write_string("}", false)
+      self.text("}", false)
       if source >= 0 {
-        self.write_string("from", true)
+        self.text("from", true)
         self.module_source(source, attributes)
       }
-      self.write_string(";", false)
+      self.text(";", false)
     }
     ExportAll(export_name, source, attributes) => {
-      self.write_string("export", true)
-      self.write_string("*", false)
+      self.text("export", true)
+      self.text("*", false)
       if export_name >= 0 {
-        self.write_string("as", true)
+        self.text("as", true)
         self.expression(export_name)
       }
-      self.write_string("from", true)
+      self.text("from", true)
       self.module_source(source, attributes)
-      self.write_string(";", false)
+      self.text(";", false)
     }
     ExportDeclaration(body) => {
-      self.write_string("export", true)
+      self.text("export", true)
       self.statement(body)
     }
     ExportDefault(body) => {
-      self.write_string("export default", true)
+      self.text("export default", true)
       self.expression(body)
-      self.write_string(";", false)
+      self.text(";", false)
     }
   }
 }

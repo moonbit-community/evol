@@ -29,7 +29,7 @@ fn Parser::class_key(self : Parser) -> ClassKey raise ParseError {
   } else {
     Plain
   }
-  let node = self.parse_property_key()
+  let node = self.property_key()
   { node, computed, prefix, }
 }
 
@@ -47,14 +47,14 @@ fn Parser::class_method(
   is_generator : Int,
   kind : Int,
 ) -> Int raise ParseError {
-  let function = self.parse_function_rest(-1, is_async, is_generator, false)
+  let function = self.function_tail(-1, is_async, is_generator, false)
   self.program.node(Method, key.node, function, kind, key.flags(is_static))
 }
 
 ///|
 /// Contextual modifiers and computed keys are consumed once, without a parser
 /// probe. Only async requires the following key to be on the same line.
-fn Parser::parse_class_member(
+fn Parser::class_member(
   self : Parser,
   members : Array[Int],
 ) -> Unit raise ParseError {
@@ -74,7 +74,7 @@ fn Parser::parse_class_member(
       if next == LeftBrace {
         let outer = self.scope
         self.scope = self.program.push_scope(outer, scope_function)
-        let body = self.parse_block()
+        let body = self.block()
         self.scope = outer
         members.push(self.program.node(ClassStaticBlock, body, 0, 0, 0))
         return
@@ -123,7 +123,7 @@ fn Parser::parse_class_member(
       raise self.unexpected("method parameter list")
     }
     let initializer = if self.eat(Assignment) {
-      self.parse_assignment_allowing_in()
+      self.assignment_with_in()
     } else {
       -1
     }

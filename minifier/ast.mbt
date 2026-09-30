@@ -138,16 +138,16 @@ priv struct Function {
 }
 
 ///|
-let function_flag_async : Int = 1
+let function_async : Int = 1
 
 ///|
-let function_flag_generator : Int = 2
+let function_generator : Int = 2
 
 ///|
-let function_flag_arrow : Int = 4
+let function_arrow : Int = 4
 
 ///|
-let function_flag_expression_body : Int = 8
+let function_expression_body : Int = 8
 
 ///|
 #valtype
@@ -180,7 +180,7 @@ priv struct Symbol {
 }
 
 ///|
-let symbol_must_not_rename : Int = 1
+let symbol_preserved : Int = 1
 
 ///|
 #valtype
