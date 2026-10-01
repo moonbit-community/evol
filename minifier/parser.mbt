@@ -63,12 +63,9 @@ fn Parser::expect(self : Parser, expected : Token) -> Unit raise ParseError {
 
 ///|
 fn Parser::eat(self : Parser, expected : Token) -> Bool raise ParseError {
-  if self.lexer.token == expected {
-    self.advance()
-    true
-  } else {
-    false
-  }
+  guard self.lexer.token == expected else { return false }
+  self.advance()
+  true
 }
 
 ///|
@@ -98,9 +95,7 @@ fn Parser::nearest_var_scope(self : Parser) -> Int {
   // Parsing scopes form a tree rooted at scope_module.
   for scope = self.scope {
     let kind = self.program.scopes[scope].kind
-    if kind == scope_module || kind == scope_function {
-      break scope
-    }
+    guard kind != scope_module && kind != scope_function else { break scope }
     continue self.program.scopes[scope].parent
   }
 }
@@ -175,13 +170,10 @@ fn Parser::pattern(
   allow_default : Bool,
 ) -> Int raise ParseError {
   let inner = self.pattern_atom(scope_id)
-  if allow_default && self.lexer.token == Assignment {
-    self.advance()
-    let default_value = self.assignment_with_in()
-    self.program.node(PatternDefault, inner, default_value, 0, 0)
-  } else {
-    inner
-  }
+  guard allow_default && self.lexer.token == Assignment else { return inner }
+  self.advance()
+  let default_value = self.assignment_with_in()
+  self.program.node(PatternDefault, inner, default_value, 0, 0)
 }
 
 ///|
@@ -204,7 +196,7 @@ fn Parser::array_pattern(self : Parser, scope_id : Int) -> Int raise ParseError 
   self.expect(LeftBracket)
   let items = self.begin_edges()
   while self.lexer.token != RightBracket && self.lexer.token != EndOfFile {
-    if self.lexer.token == Comma {
+    guard self.lexer.token != Comma else {
       self.advance()
       items.push(-1)
       continue
@@ -216,9 +208,7 @@ fn Parser::array_pattern(self : Parser, scope_id : Int) -> Int raise ParseError 
     } else {
       items.push(self.pattern(scope_id, true))
     }
-    if !self.eat(Comma) {
-      break
-    }
+    guard self.eat(Comma) else { break }
   }
   self.expect(RightBracket)
   let { offset, count, } = self.program.edge_list(items)
@@ -240,9 +230,7 @@ fn Parser::object_pattern(
     } else {
       items.push(self.pattern_property(scope_id))
     }
-    if !self.eat(Comma) {
-      break
-    }
+    guard self.eat(Comma) else { break }
   }
   self.expect(RightBrace)
   let { offset, count, } = self.program.edge_list(items)
@@ -255,7 +243,7 @@ fn Parser::pattern_property(
   scope_id : Int,
 ) -> Int raise ParseError {
   let (key, is_computed) = self.property_key_with_computed()
-  if self.eat(Colon) {
+  guard !self.eat(Colon) else {
     let binding = self.pattern(scope_id, true)
     let flags = if is_computed { PROPERTY_COMPUTED } else { 0 }
     return self.program.node(PatternProperty, key, binding, 0, flags)
@@ -277,14 +265,13 @@ fn Parser::pattern_property(
 fn Parser::property_key_with_computed(
   self : Parser,
 ) -> (Int, Bool) raise ParseError {
-  if self.lexer.token == LeftBracket {
-    self.advance()
-    let expression = self.assignment_with_in()
-    self.expect(RightBracket)
-    (expression, true)
-  } else {
-    (self.property_key(), false)
+  guard self.lexer.token == LeftBracket else {
+    return (self.property_key(), false)
   }
+  self.advance()
+  let expression = self.assignment_with_in()
+  self.expect(RightBracket)
+  (expression, true)
 }
 
 ///|
@@ -429,9 +416,8 @@ fn Parser::expression_statement(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::eat_semicolon(self : Parser) -> Unit raise ParseError {
-  if self.lexer.token == Semicolon {
-    self.advance()
-  }
+  guard self.lexer.token == Semicolon else { return }
+  self.advance()
 }
 
 ///|
@@ -534,12 +520,10 @@ fn Parser::for_initializer(self : Parser) -> (Int, Bool) raise ParseError {
       self.lexer.keyword == Keyword::Const
     )
   let initializer = if is_declaration {
-    let kind = if self.lexer.keyword == Keyword::Var {
-      DECLARATION_VAR
-    } else if self.lexer.keyword == Keyword::Let {
-      DECLARATION_LET
-    } else {
-      DECLARATION_CONST
+    let kind = match self.lexer.keyword {
+      Var => DECLARATION_VAR
+      Let => DECLARATION_LET
+      _ => DECLARATION_CONST
     }
     self.advance()
     self.allow_in = false
@@ -642,9 +626,7 @@ fn Parser::declarators(
       -1
     }
     declarations.push(self.program.node(Declarator, pattern, initializer, 0, 0))
-    if !self.eat(Comma) {
-      break
-    }
+    guard self.eat(Comma) else { break }
   }
   declarations
 }
@@ -914,9 +896,7 @@ fn Parser::function_parameters(
     } else {
       parameters.push(self.pattern(function_scope, true))
     }
-    if !self.eat(Comma) {
-      break
-    }
+    guard self.eat(Comma) else { break }
   }
   self.expect(RightParenthesis)
   parameters
@@ -945,11 +925,10 @@ fn Parser::class_name_reference(
   let name_start = self.lexer.start
   let name_end = self.lexer.end
   self.advance()
-  if is_declaration {
-    self.declare_symbol(self.scope, name_start, name_end)
-  } else {
-    self.add_reference(self.scope, name_start, name_end)
+  guard is_declaration else {
+    return self.add_reference(self.scope, name_start, name_end)
   }
+  self.declare_symbol(self.scope, name_start, name_end)
 }
 
 ///|
@@ -990,9 +969,7 @@ fn Parser::class_body_members(self : Parser) -> PendingEdges raise ParseError {
   self.expect(LeftBrace)
   let members = self.begin_edges()
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
-    if self.eat(Semicolon) {
-      continue
-    }
+    guard !self.eat(Semicolon) else { continue }
     self.class_member(members)
   }
   members
@@ -1036,9 +1013,7 @@ fn Parser::property_key(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::expression(self : Parser) -> Int raise ParseError {
   let first_expression = self.assignment()
-  if self.lexer.token != Comma {
-    return first_expression
-  }
+  guard self.lexer.token == Comma else { return first_expression }
   let items = self.begin_edges()
   items.push(first_expression)
   while self.eat(Comma) {
@@ -1134,14 +1109,12 @@ fn Parser::assignment_operator(self : Parser) -> Int {
 ///|
 fn Parser::conditional(self : Parser) -> Int raise ParseError {
   let condition = self.binary(1)
-  if self.lexer.token == Question {
-    self.advance()
-    let consequent = self.assignment_with_in()
-    self.expect(Colon)
-    let alternate = self.assignment()
-    return self.program.node(Conditional, condition, consequent, alternate, 0)
-  }
-  condition
+  guard self.lexer.token == Question else { return condition }
+  self.advance()
+  let consequent = self.assignment_with_in()
+  self.expect(Colon)
+  let alternate = self.assignment()
+  self.program.node(Conditional, condition, consequent, alternate, 0)
 }
 
 ///|
@@ -1350,10 +1323,11 @@ fn Parser::mark_direct_eval(self : Parser, expression : Int) -> Unit {
     guard node.kind == Parenthesized else { break node }
     continue node.a
   }
-  if callee.kind == Identifier &&
-    self.program.references[callee.a].name == name_eval {
-    self.program.has_dynamic_scope = true
+  guard callee.kind == Identifier &&
+    self.program.references[callee.a].name == name_eval else {
+    return
   }
+  self.program.has_dynamic_scope = true
 }
 
 ///|
@@ -1368,9 +1342,7 @@ fn Parser::arguments(self : Parser) -> EdgeRange raise ParseError {
     } else {
       arguments.push(self.assignment_with_in())
     }
-    if !self.eat(Comma) {
-      break
-    }
+    guard self.eat(Comma) else { break }
   }
   self.expect(RightParenthesis)
   self.program.edge_list(arguments)
@@ -1486,7 +1458,7 @@ fn Parser::identifier_reference(self : Parser) -> Int raise ParseError {
   let start = self.lexer.start
   let end = self.lexer.end
   self.advance()
-  if self.lexer.token == Arrow {
+  guard self.lexer.token != Arrow else {
     return self.single_arrow(start, end, false)
   }
   self.program.node(
@@ -1500,7 +1472,7 @@ fn Parser::identifier_reference(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::parse_new(self : Parser) -> Int raise ParseError {
-  if self.lexer.token == Dot {
+  guard self.lexer.token != Dot else {
     self.advance()
     let name_start = self.lexer.start
     let name_end = self.lexer.end
@@ -1575,30 +1547,27 @@ fn Parser::single_arrow(
 
 ///|
 fn Parser::arrow_body(self : Parser) -> (Int, Int) raise ParseError {
-  if self.lexer.token == LeftBrace {
-    (self.function_body(), 0)
-  } else {
-    (self.assignment(), FUNCTION_EXPRESSION_BODY)
+  guard self.lexer.token == LeftBrace else {
+    return (self.assignment(), FUNCTION_EXPRESSION_BODY)
   }
+  (self.function_body(), 0)
 }
 
 ///|
 fn Parser::parentheses(self : Parser) -> Int raise ParseError {
   let expression = self.parenthesized()
-  if self.lexer.token == Arrow {
-    self.finish_arrow(expression, false)
-  } else {
-    self.finish_parenthesized(expression)
+  guard self.lexer.token == Arrow else {
+    return self.finish_parenthesized(expression)
   }
+  self.finish_arrow(expression, false)
 }
 
 ///|
 fn Parser::template_literal(self : Parser) -> Int raise ParseError {
-  if self.lexer.token == TemplateNoSubstitution {
-    self.source_literal(TemplateNoSubstitution)
-  } else {
-    self.template()
+  guard self.lexer.token == TemplateNoSubstitution else {
+    return self.template()
   }
+  self.source_literal(TemplateNoSubstitution)
 }
 
 ///|
@@ -1616,7 +1585,7 @@ fn Parser::template(self : Parser) -> Int raise ParseError {
       raise self.syntax_error("template substitution must end with }")
     }
     self.lexer.resume_template()
-    if self.lexer.token == TemplateTail {
+    guard self.lexer.token != TemplateTail else {
       quasi_count = quasi_count + 1
       parts.push(self.lexer.quasi_start)
       parts.push(self.lexer.quasi_end)
@@ -1634,7 +1603,7 @@ fn Parser::array_literal(self : Parser) -> Int raise ParseError {
   let items = self.begin_edges()
   let mut trailing_comma = false
   while self.lexer.token != RightBracket && self.lexer.token != EndOfFile {
-    if self.lexer.token == Comma {
+    guard self.lexer.token != Comma else {
       self.advance()
       items.push(-1)
       continue
@@ -1646,9 +1615,7 @@ fn Parser::array_literal(self : Parser) -> Int raise ParseError {
     } else {
       items.push(self.assignment_with_in())
     }
-    if !self.eat(Comma) {
-      break
-    }
+    guard self.eat(Comma) else { break }
     trailing_comma = self.lexer.token == RightBracket
   }
   self.expect(RightBracket)
@@ -1673,9 +1640,7 @@ fn Parser::object_literal(self : Parser) -> Int raise ParseError {
   let mut trailing_comma = false
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
     properties.push(self.object_property())
-    if !self.eat(Comma) {
-      break
-    }
+    guard self.eat(Comma) else { break }
     trailing_comma = self.lexer.token == RightBrace
   }
   self.expect(RightBrace)

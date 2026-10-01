@@ -155,14 +155,9 @@ fn Parser::default_export(self : Parser) -> ModuleStatement raise ParseError {
       self.lexer.keyword == Keyword::Async &&
       self.peek_is_keyword(Keyword::Function)
     )
-  let body = if is_declaration {
-    self.statement()
-  } else {
-    self.assignment_with_in()
-  }
-  if !is_declaration {
-    self.eat_semicolon()
-  }
+  guard !is_declaration else { return ExportDefault(self.statement()) }
+  let body = self.assignment_with_in()
+  self.eat_semicolon()
   ExportDefault(body)
 }
 
@@ -246,9 +241,8 @@ fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
     PatternArray | PatternObject =>
       for index in 0..<node.b {
         let item = self.program.edges[node.a + index]
-        if item >= 0 {
-          self.preserve_exported_names(item)
-        }
+        guard item >= 0 else { continue }
+        self.preserve_exported_names(item)
       }
     PatternProperty => self.preserve_exported_names(node.b)
     PatternRest | PatternDefault | Declarator =>
@@ -263,12 +257,11 @@ fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
       } else {
         self.program.classes[node.a].name
       }
-      if reference >= 0 {
-        let symbol = self.program.references[reference].symbol
-        self.program.symbols[symbol] = {
-          ..self.program.symbols[symbol],
-          flags: symbol_preserved,
-        }
+      guard reference >= 0 else { return }
+      let symbol = self.program.references[reference].symbol
+      self.program.symbols[symbol] = {
+        ..self.program.symbols[symbol],
+        flags: symbol_preserved,
       }
     }
     _ => ()
@@ -282,10 +275,9 @@ fn Printer::module_source(
   attributes : Int,
 ) -> Unit {
   self.expression(source)
-  if attributes >= 0 {
-    self.text("with", true)
-    self.expression(attributes)
-  }
+  guard attributes >= 0 else { return }
+  self.text("with", true)
+  self.expression(attributes)
 }
 
 ///|
@@ -360,9 +352,8 @@ fn Printer::import_bindings(
       }
     }
   }
-  if named_group_open {
-    self.text("}", false)
-  }
+  guard named_group_open else { return }
+  self.text("}", false)
 }
 
 ///|

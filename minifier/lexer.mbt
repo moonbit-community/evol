@@ -157,7 +157,7 @@ fn Lexer::finish_identifier(
   self : Lexer,
   rest : StringView,
 ) -> Unit raise ParseError {
-  if rest.length() > 0 && rest.get_char(0) is None {
+  guard rest.length() == 0 || rest.get_char(0) is Some(_) else {
     self.position = rest.start_offset()
     return self.identifier_tail(self.start)
   }
@@ -332,7 +332,7 @@ fn Lexer::operator_token(self : Lexer) -> Unit raise ParseError {
       )
     (re"^\?\.", after=rest) => return self.finish_token(OptionalChaining, rest)
     _ => {
-      if self.source.get_char(self.position) is None {
+      guard self.source.get_char(self.position) is Some(_) else {
         return self.identifier_tail(self.position)
       }
       raise UnexpectedCharacter(

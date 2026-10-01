@@ -74,12 +74,11 @@ fn Printer::new(program : Program) -> Printer {
 
 ///|
 fn Printer::flush_semicolon(self : Printer) -> Unit {
-  if self.pending_semicolon {
-    self.output.write_string(";")
-    self.previous_is_word = false
-    self.last_character = ';'
-    self.pending_semicolon = false
-  }
+  guard self.pending_semicolon else { return }
+  self.output.write_string(";")
+  self.previous_is_word = false
+  self.last_character = ';'
+  self.pending_semicolon = false
 }
 
 ///|
@@ -136,11 +135,11 @@ fn Printer::reference(self : Printer, id : Int) -> Unit {
   } else {
     -1
   }
-  if slot >= 0 {
-    self.text(self.program.generated_names[slot], true)
-  } else {
+  guard slot >= 0 else {
     self.span(reference.name_start, reference.name_end, true)
+    return
   }
+  self.text(self.program.generated_names[slot], true)
 }
 
 ///|
@@ -190,9 +189,8 @@ fn Printer::array_pattern(self : Printer, offset : Int, count : Int) -> Unit {
       self.text(",", false)
     }
     let element = self.program.edges[offset + index]
-    if element >= 0 {
-      self.pattern(element)
-    }
+    guard element >= 0 else { continue }
+    self.pattern(element)
   }
   self.array_end(offset, count)
 }
@@ -220,13 +218,13 @@ fn Printer::object_pattern(self : Printer, offset : Int, count : Int) -> Unit {
 
 ///|
 fn Printer::property_key(self : Printer, key : Int, is_computed : Bool) -> Unit {
-  if is_computed {
-    self.text("[", false)
-    self.property_expression(key)
-    self.text("]", false)
-  } else {
+  guard is_computed else {
     self.pattern_key(key)
+    return
   }
+  self.text("[", false)
+  self.property_expression(key)
+  self.text("]", false)
 }
 
 ///|
@@ -266,16 +264,16 @@ fn Printer::pattern_property(self : Printer, property : Node) -> Unit {
 
 ///|
 fn Printer::pattern_key(self : Printer, id : Int) -> Unit {
-  if self.program.property_names.get(id) is Some(name) {
-    self.text(name, true)
+  guard self.program.property_names.get(id) is Some(name) else {
+    let node = self.program.nodes[id]
+    match node.kind {
+      StringLiteral => self.string(node.a, node.b)
+      NumberLiteral => self.number(node.a, node.b)
+      _ => self.expression(id)
+    }
     return
   }
-  let node = self.program.nodes[id]
-  match node.kind {
-    StringLiteral => self.string(node.a, node.b)
-    NumberLiteral => self.number(node.a, node.b)
-    _ => self.expression(id)
-  }
+  self.text(name, true)
 }
 
 ///|
@@ -303,18 +301,13 @@ fn Printer::method_prefix(
   kind : Int,
   function : Function,
 ) -> Unit {
-  if kind == METHOD_GETTER {
-    self.text("get", true)
-  } else if kind == METHOD_SETTER {
-    self.text("set", true)
-  } else {
-    if (function.flags & FUNCTION_ASYNC) != 0 {
-      self.text("async", true)
-    }
-    if (function.flags & FUNCTION_GENERATOR) != 0 {
-      self.text("*", false)
-    }
+  guard kind != METHOD_GETTER else { return self.text("get", true) }
+  guard kind != METHOD_SETTER else { return self.text("set", true) }
+  if (function.flags & FUNCTION_ASYNC) != 0 {
+    self.text("async", true)
   }
+  guard (function.flags & FUNCTION_GENERATOR) != 0 else { return }
+  self.text("*", false)
 }
 
 ///|
@@ -339,10 +332,9 @@ fn Printer::data_property(self : Printer, property : Node) -> Unit {
   } else {
     true
   }
-  if needs_value {
-    self.text(":", false)
-    self.expression(value)
-  }
+  guard needs_value else { return }
+  self.text(":", false)
+  self.expression(value)
 }
 
 ///|
@@ -389,11 +381,11 @@ fn Printer::arrow_function(self : Printer, function : Function) -> Unit {
     self.parameters(function)
   }
   self.text("=>", false)
-  if (function.flags & FUNCTION_EXPRESSION_BODY) != 0 {
-    self.expression(function.body)
-  } else {
+  guard (function.flags & FUNCTION_EXPRESSION_BODY) != 0 else {
     self.isolated_block(function.body)
+    return
   }
+  self.expression(function.body)
 }
 
 ///|
@@ -581,9 +573,8 @@ fn Printer::array_literal(self : Printer, offset : Int, count : Int) -> Unit {
       self.text(",", false)
     }
     let element = self.program.edges[offset + index]
-    if element >= 0 {
-      self.expression(element)
-    }
+    guard element >= 0 else { continue }
+    self.expression(element)
   }
   self.array_end(offset, count)
 }
@@ -658,11 +649,11 @@ fn Printer::member_expression(
     self.text(")", false)
   }
   self.text(if member_node.d == CHAIN_OPTIONAL { "?." } else { "." }, false)
-  if self.program.member_names.get(id) is Some(name) {
-    self.text(name, true)
-  } else {
+  guard self.program.member_names.get(id) is Some(name) else {
     self.span(name_start, name_end, true)
+    return
   }
+  self.text(name, true)
 }
 
 ///|
@@ -678,14 +669,12 @@ fn Printer::template_expression(
     let literal_start = self.program.edges[edge]
     let literal_end = self.program.edges[edge + 1]
     self.span(literal_start, literal_end, false)
-    if part < count - 1 {
-      let expression = self.program.edges[edge + 2]
-      self.text("${", false)
-      self.expression(expression)
-      self.text("}", false)
-      continue part + 1, edge + 3
-    }
-    continue part + 1, edge + 2
+    guard part < count - 1 else { continue part + 1, edge + 2 }
+    let expression = self.program.edges[edge + 2]
+    self.text("${", false)
+    self.expression(expression)
+    self.text("}", false)
+    continue part + 1, edge + 3
   }
   self.text("`", false)
 }
@@ -758,9 +747,8 @@ fn Printer::statement(self : Printer, id : Int) -> Unit {
     }
     _ => abort("bad statement: \{node.kind.to_repr()}")
   }
-  if needs_semicolon(node.kind) {
-    self.pending_semicolon = true
-  }
+  guard needs_semicolon(node.kind) else { return }
+  self.pending_semicolon = true
 }
 
 ///|
@@ -780,20 +768,18 @@ fn Printer::if_statement(
   self.text("if", true)
   self.parenthesized_expression(condition)
   self.statement(consequent)
-  if alternative >= 0 {
-    self.text("else", true)
-    self.statement(alternative)
-  }
+  guard alternative >= 0 else { return }
+  self.text("else", true)
+  self.statement(alternative)
 }
 
 ///|
 fn Printer::for_initializer(self : Printer, initializer : Int) -> Unit {
   let node = self.program.nodes[initializer]
-  if node.kind == VariableDeclaration {
-    self.declaration(node)
-  } else {
-    self.expression(initializer)
+  guard node.kind == VariableDeclaration else {
+    return self.expression(initializer)
   }
+  self.declaration(node)
 }
 
 ///|
@@ -880,10 +866,9 @@ fn Printer::try_statement(
     }
     self.block(catch_clause.b)
   }
-  if finalizer >= 0 {
-    self.text("finally", true)
-    self.block(finalizer)
-  }
+  guard finalizer >= 0 else { return }
+  self.text("finally", true)
+  self.block(finalizer)
 }
 
 ///|
@@ -902,12 +887,10 @@ fn Printer::switch_case(self : Printer, id : Int) -> Unit {
 ///|
 fn Printer::declaration(self : Printer, node : Node) -> Unit {
   self.text(
-    if node.a == DECLARATION_VAR {
-      "var"
-    } else if node.a == DECLARATION_LET {
-      "let"
-    } else {
-      "const"
+    match node.a {
+      DECLARATION_VAR => "var"
+      DECLARATION_LET => "let"
+      _ => "const"
     },
     true,
   )
@@ -917,10 +900,9 @@ fn Printer::declaration(self : Printer, node : Node) -> Unit {
     }
     let declarator = self.program.nodes[self.program.edges[node.b + i]]
     self.pattern(declarator.a)
-    if declarator.b >= 0 {
-      self.text("=", false)
-      self.expression(declarator.b)
-    }
+    guard declarator.b >= 0 else { continue }
+    self.text("=", false)
+    self.expression(declarator.b)
   }
 }
 

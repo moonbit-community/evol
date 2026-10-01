@@ -46,11 +46,8 @@ fn quoted_property_name(source : String, start : Int, end : Int) -> String? {
     continue rest
   }
   let name = output.to_string()
-  if name =~ ASCII_PROPERTY_NAME {
-    Some(name)
-  } else {
-    None
-  }
+  guard name =~ ASCII_PROPERTY_NAME else { return None }
+  Some(name)
 }
 
 ///|

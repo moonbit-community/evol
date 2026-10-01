@@ -27,9 +27,7 @@ fn Parser::parenthesized(self : Parser) -> Parenthesized raise ParseError {
       self.assignment_with_in()
     }
     items.push(item)
-    if !self.eat(Comma) {
-      break
-    }
+    guard self.eat(Comma) else { break }
     trailing_comma = self.lexer.token == RightParenthesis
   }
   self.expect(RightParenthesis)
@@ -105,7 +103,7 @@ fn Parser::async_parentheses(
   name_end : Int,
 ) -> Int raise ParseError {
   let expression = self.parenthesized()
-  if self.lexer.token == Arrow {
+  guard self.lexer.token != Arrow else {
     return self.finish_arrow(expression, true)
   }
   self.collapse_parenthesized_scope(expression)
@@ -234,9 +232,8 @@ fn Parser::cover_rest(
 ///|
 fn Parser::assignment_pattern(self : Parser, id : Int) -> Unit raise ParseError {
   let kind = self.program.nodes[id].kind
-  if kind == ArrayLiteral || kind == ObjectLiteral {
-    self.cover_pattern(id, false)
-  }
+  guard kind == ArrayLiteral || kind == ObjectLiteral else { return }
+  self.cover_pattern(id, false)
 }
 
 ///|

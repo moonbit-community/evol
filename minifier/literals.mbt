@@ -103,20 +103,18 @@ fn Printer::number(self : Printer, start : Int, end : Int) -> Unit {
     self.span(start, end, true)
     return
   }
-  if decimal.exponent_marker == end {
+  guard decimal.exponent_marker != end else {
     // BigInt and other bases were excluded by the decimal scan.
-    if decimal.is_integer &&
-      integer_exponent_spelling(source, start, end) is Some(text) {
-      self.text(text, true)
-    } else {
-      self.span(decimal.mantissa_start, end, true)
+    guard decimal.is_integer &&
+      integer_exponent_spelling(source, start, end) is Some(text) else {
+      return self.span(decimal.mantissa_start, end, true)
     }
-  } else if shortened_exponent_spelling(source, start, end, decimal)
-    is Some(text) {
-    self.text(text, true)
-  } else {
-    self.span(start, end, true)
+    return self.text(text, true)
   }
+  guard shortened_exponent_spelling(source, start, end, decimal) is Some(text) else {
+    return self.span(start, end, true)
+  }
+  self.text(text, true)
 }
 
 ///|
@@ -177,12 +175,11 @@ fn quoted_string_piece(
 
 ///|
 fn QuoteCosts::preferred_quote(self : QuoteCosts, original : UInt16) -> UInt16 {
+  guard self.single_quotes != self.double_quotes else { return original }
   if self.single_quotes < self.double_quotes {
     '\''
-  } else if self.double_quotes < self.single_quotes {
-    '"'
   } else {
-    original
+    '"'
   }
 }
 

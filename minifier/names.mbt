@@ -78,16 +78,18 @@ fn unchanged_character_counts(program : Program) -> Array[Int] {
     count_characters(program.source, start, end, counts, -1)
   }
   for reference in program.references {
-    if reference.symbol >= 0 &&
-      (program.symbols[reference.symbol].flags & symbol_preserved) == 0 {
-      subtract_name(reference.name_start, reference.name_end)
+    guard reference.symbol >= 0 &&
+      (program.symbols[reference.symbol].flags & symbol_preserved) == 0 else {
+      continue
     }
+    subtract_name(reference.name_start, reference.name_end)
   }
   for node in program.nodes {
-    if (node.kind == Labeled || node.kind == Break || node.kind == Continue) &&
-      node.a >= 0 {
-      subtract_name(node.a, node.b)
+    guard (node.kind == Labeled || node.kind == Break || node.kind == Continue) &&
+      node.a >= 0 else {
+      continue
     }
+    subtract_name(node.a, node.b)
   }
   for id, _ in program.property_names {
     let node = program.nodes[property_leaf(program, id)]
@@ -105,20 +107,16 @@ fn alphabet_by_frequency(counts : Array[Int]) -> NameAlphabet {
   let order = Array::makei(NAME_REST.length(), index => index)
   order.sort_by((left, right) => {
     let difference = counts[right] - counts[left]
-    if difference == 0 {
-      left - right
-    } else {
-      difference
-    }
+    guard difference == 0 else { return difference }
+    left - right
   })
   let first = StringBuilder()
   let rest = StringBuilder()
   for index in order {
     let character = NAME_REST.get_char(index).unwrap()
     rest.write_char(character)
-    if index < NAME_FIRST.length() {
-      first.write_char(character)
-    }
+    guard index < NAME_FIRST.length() else { continue }
+    first.write_char(character)
   }
   { first: first.to_string(), rest: rest.to_string(), }
 }

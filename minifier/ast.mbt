@@ -395,9 +395,8 @@ fn Program::symbol_root(self : Program, id : Int) -> Int {
 fn Program::link_symbols(self : Program, left : Int, right : Int) -> Unit {
   let left_root = self.symbol_root(left)
   let right_root = self.symbol_root(right)
-  if left_root != right_root {
-    self.symbols[right_root] = { ..self.symbols[right_root], link: left_root, }
-  }
+  guard left_root != right_root else { return }
+  self.symbols[right_root] = { ..self.symbols[right_root], link: left_root, }
 }
 
 ///|
@@ -418,25 +417,40 @@ fn Program::identifier(
   end : Int,
 ) -> Int raise ParseError {
   let spelling = self.source[start:end]
-  if self.identifier_ids.get(spelling) is Some(id) {
-    return id
+  guard self.identifier_ids.get(spelling) is Some(id) else {
+    return self.intern_identifier(spelling)
   }
+  id
+}
+
+///|
+fn Program::intern_identifier(
+  self : Program,
+  spelling : StringView,
+) -> Int raise ParseError {
+  let start = spelling.start_offset()
+  let end = start + spelling.length()
   let escaped = spelling.contains_code_unit('\\')
   let name = if escaped {
     identifier_name(self.source, start, end)
   } else {
     spelling.to_owned()
   }
-  if escaped && self.identifier_ids.get(name[:]) is Some(id) {
+  let canonical_id = if escaped {
+    self.identifier_ids.get(name[:])
+  } else {
+    None
+  }
+  guard canonical_id is Some(id) else {
+    let id = self.names.length()
+    self.names.push(name)
     self.identifier_ids.insert(spelling, id)
+    if escaped {
+      self.identifier_ids.insert(name[:], id)
+    }
     return id
   }
-  let id = self.names.length()
-  self.names.push(name)
   self.identifier_ids.insert(spelling, id)
-  if escaped {
-    self.identifier_ids.insert(name[:], id)
-  }
   id
 }
 

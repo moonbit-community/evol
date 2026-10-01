@@ -66,11 +66,10 @@ fn Lexer::regex(self : Lexer) -> Unit raise ParseError {
       }
       (re"^/", after=rest) => {
         self.position = rest.start_offset()
-        if !in_class {
-          let flags_end = raw_identifier_end(self.source, self.position)
-          self.finish_token(Regex, self.source.view(start_offset=flags_end))
-          return
-        }
+        guard !in_class else { continue }
+        let flags_end = raw_identifier_end(self.source, self.position)
+        self.finish_token(Regex, self.source.view(start_offset=flags_end))
+        return
       }
       (re"^\[", after=rest) => {
         in_class = true

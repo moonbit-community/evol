@@ -27,11 +27,9 @@ fn Printer::label_reference(
       break
     }
     let (original, renamed) = self.labels.active[index]
-    if original == name {
-      self.text(renamed, true)
-      break
-    }
-    continue index - 1
+    guard original == name else { continue index - 1 }
+    self.text(renamed, true)
+    break
   }
 }
 

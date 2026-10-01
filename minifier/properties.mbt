@@ -17,9 +17,8 @@ fn PropertyAnalysis::new(
 ) -> PropertyAnalysis {
   let allowed = @hashset.HashSet([])
   for name in requested {
-    if name =~ ASCII_PROPERTY_NAME {
-      allowed.add(name)
-    }
+    guard name =~ ASCII_PROPERTY_NAME else { continue }
+    allowed.add(name)
   }
   let pinned = keywords.copy()
   pinned.add("__proto__")
@@ -43,9 +42,8 @@ fn Program::class_method_ids(self : Program) -> @hashset.HashSet[Int] {
   for class in self.classes {
     for index in 0..<class.members_count {
       let id = self.edges[class.members_offset + index]
-      if self.nodes[id].kind == Method {
-        methods.add(id)
-      }
+      guard self.nodes[id].kind == Method else { continue }
+      methods.add(id)
     }
   }
   methods
@@ -58,11 +56,11 @@ fn PropertyAnalysis::quoted_name(
   end : Int,
 ) -> String? {
   let spelling = self.program.source[start:end]
-  if self.quoted_names.get(spelling) is Some(name) {
-    return name
+  guard self.quoted_names.get(spelling) is Some(name) else {
+    let decoded = quoted_property_name(self.program.source, start, end)
+    self.quoted_names[spelling] = decoded
+    return decoded
   }
-  let name = quoted_property_name(self.program.source, start, end)
-  self.quoted_names[spelling] = name
   name
 }
 
@@ -77,16 +75,15 @@ fn PropertyAnalysis::key_name(
   guard node.kind == StringLiteral || node.kind == TemplateNoSubstitution else {
     return None
   }
-  if program.source.view(start_offset=node.a) =~ (PROPERTY_QUOTE_START, after=_) {
-    return self.quoted_name(node.a, node.b)
-  }
+  let is_quoted = program.source.view(start_offset=node.a) =~ (
+    PROPERTY_QUOTE_START,
+    after=_,
+  )
+  guard !is_quoted else { return self.quoted_name(node.a, node.b) }
   guard !computed else { return None }
   let name = program.names[program.identifier(node.a, node.b)]
-  if name =~ ASCII_PROPERTY_NAME {
-    Some(name)
-  } else {
-    None
-  }
+  guard name =~ ASCII_PROPERTY_NAME else { return None }
+  Some(name)
 }
 
 ///|
@@ -108,9 +105,8 @@ fn PropertyAnalysis::collect(self : PropertyAnalysis) -> Unit raise ParseError {
     match node.kind {
       Member if node.a >= 0 => {
         let name = program.names[program.identifier(node.b, node.c)]
-        if name =~ ASCII_PROPERTY_NAME {
-          self.members[id] = name
-        }
+        guard name =~ ASCII_PROPERTY_NAME else { continue }
+        self.members[id] = name
       }
       Property | PatternProperty =>
         self.collect_key(node.a, node.d == PROPERTY_COMPUTED)
@@ -147,9 +143,8 @@ fn PropertyAnalysis::preserve_strings(self : PropertyAnalysis) -> Unit {
     ) else {
       continue
     }
-    if self.quoted_name(node.a, node.b) is Some(name) {
-      self.pinned.add(name)
-    }
+    guard self.quoted_name(node.a, node.b) is Some(name) else { continue }
+    self.pinned.add(name)
   }
 }
 
@@ -167,9 +162,8 @@ fn PropertyAnalysis::preserve_attributes(self : PropertyAnalysis) -> Unit {
     let object = program.nodes[attributes]
     for index in 0..<object.b {
       let property = program.nodes[program.edges[object.a + index]]
-      if self.keys.get(property.a) is Some(name) {
-        self.pinned.add(name)
-      }
+      guard self.keys.get(property.a) is Some(name) else { continue }
+      self.pinned.add(name)
     }
   }
 }
@@ -182,9 +176,10 @@ fn PropertyAnalysis::select(
 ) -> Unit {
   for id, name in uses {
     self.program.property_reserved.add(name)
-    if self.allowed.contains(name) && !self.pinned.contains(name) {
-      selected[id] = name
+    guard self.allowed.contains(name) && !self.pinned.contains(name) else {
+      continue
     }
+    selected[id] = name
   }
 }
 
@@ -252,22 +247,19 @@ fn property_frequencies(
   }
   frequencies.sort_by((left, right) => {
     let difference = right.count - left.count
-    if difference == 0 {
-      left.name.compare(right.name)
-    } else {
-      difference
-    }
+    guard difference == 0 else { return difference }
+    left.name.compare(right.name)
   })
   frequencies
 }
 
 ///|
 fn Printer::property_expression(self : Printer, id : Int) -> Unit {
-  if self.program.property_names.get(id) is Some(name) {
-    self.text("\"", false)
-    self.text(name, false)
-    self.text("\"", false)
-  } else {
+  guard self.program.property_names.get(id) is Some(name) else {
     self.expression(id)
+    return
   }
+  self.text("\"", false)
+  self.text(name, false)
+  self.text("\"", false)
 }

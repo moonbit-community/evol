@@ -61,13 +61,13 @@ fn Parser::class_member(
     members.push(self.class_member_tail(key, false, is_generator))
     return
   }
-  if self.lexer.token == LeftBrace {
+  guard self.lexer.token != LeftBrace else {
     members.push(self.class_static_block())
-  } else {
-    let is_generator = self.eat(Asterisk)
-    let key = self.class_key()
-    members.push(self.class_member_tail(key, true, is_generator))
+    return
   }
+  let is_generator = self.eat(Asterisk)
+  let key = self.class_key()
+  members.push(self.class_member_tail(key, true, is_generator))
 }
 
 ///|
@@ -118,11 +118,8 @@ fn Parser::class_member_tail(
   let is_async = key.prefix == Async && !self.lexer.newline_before
   let has_method_prefix = (is_accessor && property_follows) ||
     (is_async && (property_follows || following == Asterisk))
-  if has_method_prefix {
-    self.prefixed_class_method(key.prefix, is_static, is_async)
-  } else {
-    self.class_field(key, is_static)
-  }
+  guard has_method_prefix else { return self.class_field(key, is_static) }
+  self.prefixed_class_method(key.prefix, is_static, is_async)
 }
 
 ///|

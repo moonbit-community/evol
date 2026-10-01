@@ -31,22 +31,18 @@ fn Program::collapse_transparent_scopes(self : Program) -> Unit {
   // in one forward pass, avoiding repeated reparenting of nested expressions.
   for index in 0..<self.scopes.length() {
     let scope = self.scopes[index]
-    if scope.parent >= 0 && self.scopes[scope.parent].kind == scope_transparent {
-      self.scopes[index] = {
-        ..scope,
-        parent: self.scopes[scope.parent].parent,
-      }
+    guard scope.parent >= 0 &&
+      self.scopes[scope.parent].kind == scope_transparent else {
+      continue
     }
+    self.scopes[index] = { ..scope, parent: self.scopes[scope.parent].parent, }
   }
 }
 
 ///|
 fn Program::reference_scope(self : Program, scope : Int) -> Int {
-  if self.scopes[scope].kind == scope_transparent {
-    self.scopes[scope].parent
-  } else {
-    scope
-  }
+  guard self.scopes[scope].kind == scope_transparent else { return scope }
+  self.scopes[scope].parent
 }
 
 ///|

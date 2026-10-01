@@ -46,10 +46,10 @@ fn IdentifierTable::find_slot(
     let index = self.slots[slot]
     guard index >= 0 else { break slot }
     let entry = self.entries[index]
-    if entry.hash == hash && entry.spelling == spelling {
-      break slot
+    guard entry.hash == hash && entry.spelling == spelling else {
+      continue (slot + 1) & mask
     }
-    continue (slot + 1) & mask
+    break slot
   }
 }
 
@@ -57,11 +57,8 @@ fn IdentifierTable::find_slot(
 fn IdentifierTable::get(self : IdentifierTable, spelling : StringView) -> Int? {
   let slot = self.find_slot(spelling, identifier_hash(spelling))
   let index = self.slots[slot]
-  if index < 0 {
-    None
-  } else {
-    Some(self.entries[index].id)
-  }
+  guard index >= 0 else { return None }
+  Some(self.entries[index].id)
 }
 
 ///|
@@ -77,12 +74,12 @@ fn IdentifierTable::insert(
   let slot = self.find_slot(spelling, hash)
   let entry = { spelling, hash, id, }
   let index = self.slots[slot]
-  if index >= 0 {
+  guard index < 0 else {
     self.entries[index] = entry
-  } else {
-    self.slots[slot] = self.entries.length()
-    self.entries.push(entry)
+    return
   }
+  self.slots[slot] = self.entries.length()
+  self.entries.push(entry)
 }
 
 ///|
@@ -91,11 +88,9 @@ fn IdentifierTable::grow(self : IdentifierTable) -> Unit {
   let mask = slots.length() - 1
   for index, entry in self.entries {
     for slot = entry.hash & mask {
-      if slots[slot] < 0 {
-        slots[slot] = index
-        break
-      }
-      continue (slot + 1) & mask
+      guard slots[slot] < 0 else { continue (slot + 1) & mask }
+      slots[slot] = index
+      break
     }
   }
   self.slots = slots

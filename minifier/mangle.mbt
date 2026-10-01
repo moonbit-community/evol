@@ -47,9 +47,8 @@ fn Program::reserve_symbol_names(
 ) -> @hashset.HashSet[String] {
   let reserved = keywords.copy()
   for reference in self.references {
-    if reference.symbol < 0 {
-      reserved.add(self.names[reference.name])
-    }
+    guard reference.symbol < 0 else { continue }
+    reserved.add(self.names[reference.name])
   }
   for index in 0..<self.symbols.length() {
     let symbol = self.symbols[index]
@@ -96,9 +95,8 @@ fn Program::captured_symbols(self : Program) -> Array[@hashset.HashSet[Int]] {
     _ => @hashset.HashSet([]),
   )
   for reference in self.references {
-    if reference.symbol >= 0 {
-      reserve_capture(self, captured, reference.scope, reference.symbol)
-    }
+    guard reference.symbol >= 0 else { continue }
+    reserve_capture(self, captured, reference.scope, reference.symbol)
   }
   // Parameters copied into a function-body environment and linked catch/var
   // declarations also constrain names even when the binding is never read.
@@ -127,17 +125,13 @@ fn Program::assign_symbol_names(
     targets.sort_by((left, right) => {
       let frequency = self.symbols[right].use_count -
         self.symbols[left].use_count
-      if frequency == 0 {
-        left - right
-      } else {
-        frequency
-      }
+      guard frequency == 0 else { return frequency }
+      left - right
     })
     for symbol in captured[scope] {
       let slot = self.symbols[symbol].name_slot
-      if slot >= 0 {
-        blocked[slot] = scope
-      }
+      guard slot >= 0 else { continue }
+      blocked[slot] = scope
     }
     let mut slot = 0
     for index in targets {
