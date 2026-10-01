@@ -17,7 +17,12 @@ The CLI exits with a nonzero status on input or argument errors. `--help` and `-
 ## CLI options
 
 - `--top`: preserve top-level binding names while renaming local bindings.
+- `--output <path>`: write to the specified file; use `-` for stdout.
+  When omitted or empty, `path/to/file.js` produces `path/to/file.min.js`.
+  Stdin input requires an explicit output destination.
 
 ```sh
 evol --top input.js
+evol input.js --output output.js
+evol input.js --output -
 ```
