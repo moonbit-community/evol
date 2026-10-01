@@ -4,8 +4,6 @@ import {
   "moonbitlang/async/stdio",
   "moonbitlang/async/fs",
   "moonbitlang/core/argparse",
-  "moonbitlang/core/debug",
-  "moonbitlang/x/sys",
 }
 
 supported_targets = "native"

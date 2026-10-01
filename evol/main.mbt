@@ -1,16 +1,16 @@
 ///|
 async fn main {
-  let matches = cli_command().parse() catch {
-    error => return fail(@debug.to_string(error))
-  }
-  guard output_path(matches) is Some(path) else {
+  let matches = cli_command().parse()
+  let input = matches.values.get("input").bind(paths => paths.get(0))
+  let requested_output = matches.values
+    .get("output")
+    .bind(paths => paths.get(0))
+  guard output_path(input, requested_output) is Some(path) else {
     return fail("specify --output when reading stdin")
   }
   let rename_top_level = !matches.flags.get("top").unwrap_or(false)
-  let source = read_source(matches)
-  let output = @minifier.minify_with(source, rename_top_level) catch {
-    error => return fail(Show::to_string(error))
-  }
+  let source = read_source(input)
+  let output = @minifier.minify_with(source, rename_top_level)
   guard path != "-" else { return @stdio.stdout.write(output) }
   @fs.write_file(path, output)
 }
@@ -46,16 +46,11 @@ fn cli_command() -> @argparse.Command {
 }
 
 ///|
-fn output_path(matches : @argparse.Matches) -> String? {
-  guard matches.values.get("output") is Some(paths) &&
-    paths.length() > 0 &&
-    paths[0].length() > 0 else {
-    guard matches.values.get("input") is Some(inputs) && inputs.length() > 0 else {
-      return None
-    }
-    return Some(minified_path(inputs[0]))
+fn output_path(input : String?, requested : String?) -> String? {
+  guard requested is Some(path) && path.length() > 0 else {
+    return input.map(minified_path)
   }
-  Some(paths[0])
+  Some(path)
 }
 
 ///|
@@ -67,15 +62,7 @@ fn minified_path(input : String) -> String {
 }
 
 ///|
-async fn read_source(matches : @argparse.Matches) -> String {
-  guard matches.values.get("input") is Some(paths) && paths.length() > 0 else {
-    return @stdio.stdin.read_all().text()
-  }
-  @fs.read_file(paths[0]).text()
-}
-
-///|
-async fn fail(message : String) -> Unit {
-  @stdio.stderr.write("evol: \{message}\n")
-  @sys.exit(1)
+async fn read_source(input : String?) -> String {
+  guard input is Some(path) else { return @stdio.stdin.read_all().text() }
+  @fs.read_file(path).text()
 }
