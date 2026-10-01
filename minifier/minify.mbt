@@ -23,7 +23,7 @@ pub fn minify_with(
   internal_properties? : ArrayView[String] = [],
 ) -> String raise ParseError {
   let program = parse(source)
-  resolve(program)
+  program.resolve()
   prepare_properties(program, internal_properties)
   mangle(program, rename_top_level)
   mangle_properties(program)

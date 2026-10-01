@@ -1,27 +1,20 @@
 ///|
-fn resolve(program : Program) -> Unit {
-  program.collapse_transparent_scopes()
-  for index in 0..<program.references.length() {
-    let reference = program.references[index]
-    let scope = program.reference_scope(reference.scope)
+fn Program::resolve(self : Program) -> Unit {
+  self.collapse_transparent_scopes()
+  for index in 0..<self.references.length() {
+    let reference = self.references[index]
+    let scope = self.reference_scope(reference.scope)
     let binding = if reference.symbol >= 0 {
       reference.symbol
     } else {
-      program.find_binding(scope, reference.name)
+      self.find_binding(scope, reference.name)
     }
-    let symbol = if binding >= 0 {
-      program.symbol_root(binding)
-    } else {
-      binding
-    }
+    let symbol = if binding >= 0 { self.symbol_root(binding) } else { binding }
     if symbol >= 0 {
-      let resolved = program.symbols[symbol]
-      program.symbols[symbol] = {
-        ..resolved,
-        use_count: resolved.use_count + 1,
-      }
+      let resolved = self.symbols[symbol]
+      self.symbols[symbol] = { ..resolved, use_count: resolved.use_count + 1, }
     }
-    program.references[index] = { ..reference, scope, symbol, }
+    self.references[index] = { ..reference, scope, symbol, }
   }
 }
 
