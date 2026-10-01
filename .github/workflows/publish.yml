@@ -2,6 +2,15 @@ name: publish-package
 
 on:
   workflow_dispatch:
+    inputs:
+      module:
+        description: module to publish
+        type: choice
+        default: all
+        options:
+          - all
+          - minifier
+          - evol
 
 jobs:
   publish:
@@ -14,15 +23,16 @@ jobs:
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
-      - name: update
-        run: moon update
-
       - name: publish
         run: |
           echo "$SECRET" > ~/.moon/credentials.json
-          (cd minifier && moon publish)
-          moon update
-          (cd evol && moon publish)
+          if [ "$MODULE" != "evol" ]; then
+            (cd minifier && moon update && moon publish)
+          fi
+          if [ "$MODULE" != "minifier" ]; then
+            (cd evol && moon update && moon publish)
+          fi
           rm ~/.moon/credentials.json
         env:
+          MODULE: ${{ inputs.module }}
           SECRET: ${{ secrets.MOONCAKES_MOONBIT_COMMUNITY_TOKEN }}
