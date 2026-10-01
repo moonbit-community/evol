@@ -11,6 +11,14 @@ async fn main {
         about="keep top-level binding names",
       ),
     ],
+    options=[
+      @argparse.OptionArg::OptionArg(
+        "mangle-props",
+        long="mangle-props",
+        action=@argparse.OptionAction::Append,
+        about="comma-separated internal ASCII property names to rename",
+      ),
+    ],
     positionals=[
       @argparse.PositionArg::PositionArg(
         "input",
@@ -26,15 +34,21 @@ async fn main {
     }
   }
   let top_level = !matches.flags.get("no-toplevel").unwrap_or(false)
+  let internal_properties : Array[String] = []
+  for group in matches.values.get("mangle-props").unwrap_or([]) {
+    for name in group.split(",") {
+      internal_properties.push(name.trim().to_owned())
+    }
+  }
   let source = match matches.values.get("input") {
     Some(paths) if paths.length() > 0 => @fs.read_file(paths[0]).text()
     _ => @stdio.stdin.read_all().text()
   }
   let output = try {
     if top_level {
-      @minifier.minify(source)
+      @minifier.minify(source, internal_properties~)
     } else {
-      @minifier.minify_with(source, false)
+      @minifier.minify_with(source, false, internal_properties~)
     }
   } catch {
     error => {

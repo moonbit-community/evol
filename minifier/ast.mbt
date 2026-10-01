@@ -231,8 +231,13 @@ priv struct Program {
   names : Array[String]
   generated_names : Array[String]
   identifier_ids : Map[StringView, Int]
-  mut has_direct_eval : Bool
+  mut has_dynamic_scope : Bool
   mut cover_defaults : Int
+  character_counts : Array[Int]
+  mut alphabet : NameAlphabet
+  property_names : Map[Int, String]
+  member_names : Map[Int, String]
+  property_reserved : @hashset.HashSet[String]
 }
 
 ///|
@@ -258,8 +263,13 @@ fn Program::new(source : String) -> Program {
       "eval": name_eval,
       "__proto__": name_proto,
     },
-    has_direct_eval: false,
+    has_dynamic_scope: false,
     cover_defaults: 0,
+    character_counts: Array::make(64, 0),
+    alphabet: { first: NAME_FIRST, rest: NAME_REST, },
+    property_names: {},
+    member_names: {},
+    property_reserved: @hashset.HashSet([]),
   }
   ignore(p.push_scope(-1, scope_module))
   p
