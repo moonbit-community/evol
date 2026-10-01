@@ -51,7 +51,7 @@ fn quoted_property_name(source : String, start : Int, end : Int) -> String? {
 }
 
 ///|
-fn property_leaf(program : Program, id : Int) -> Int {
+fn Program::property_leaf(program : Program, id : Int) -> Int {
   for current = id {
     let node = program.nodes[current]
     guard node.kind == Parenthesized else { break current }

@@ -41,7 +41,7 @@ fn NameGenerator::new(
 ///|
 fn NameGenerator::next_name(self : NameGenerator) -> String {
   for index = self.index {
-    let name = short_name(index, self.alphabet)
+    let name = self.alphabet.short_name(index)
     guard !self.reserved.contains(name) else { continue index + 1 }
     self.index = index + 1
     break name
@@ -64,13 +64,13 @@ fn count_characters(
 }
 
 ///|
-fn name_alphabet(program : Program) -> NameAlphabet {
-  let counts = unchanged_character_counts(program)
+fn Program::name_alphabet(program : Program) -> NameAlphabet {
+  let counts = program.unchanged_character_counts()
   alphabet_by_frequency(counts)
 }
 
 ///|
-fn unchanged_character_counts(program : Program) -> Array[Int] {
+fn Program::unchanged_character_counts(program : Program) -> Array[Int] {
   let counts = program.character_counts.copy()
   let counted_removals : @hashset.HashSet[Int] = @hashset.HashSet([])
   let subtract_name = (start, end) => {
@@ -92,7 +92,7 @@ fn unchanged_character_counts(program : Program) -> Array[Int] {
     subtract_name(node.a, node.b)
   }
   for id, _ in program.property_names {
-    let node = program.nodes[property_leaf(program, id)]
+    let node = program.nodes[program.property_leaf(id)]
     subtract_name(node.a, node.b)
   }
   for id, _ in program.member_names {

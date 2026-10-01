@@ -42,7 +42,7 @@ fn position_at(source : String, offset : Int) -> Position {
 }
 
 ///|
-fn position_text(position : Position) -> String {
+fn Position::text(position : Position) -> String {
   " at \{position.line}:\{position.column}"
 }
 
@@ -50,17 +50,16 @@ fn position_text(position : Position) -> String {
 pub impl Show for ParseError with fn output(self, logger) {
   match self {
     UnexpectedToken(position, expected, got) =>
-      logger.write("expected \{expected}, got \{got}\{position_text(position)}")
+      logger.write("expected \{expected}, got \{got}\{position.text()}")
     UnexpectedCharacter(position, character) =>
       logger.write(
-        "unexpected character '\{character.escape(quote=false)}'\{position_text(position)}",
+        "unexpected character '\{character.escape(quote=false)}'\{position.text()}",
       )
     Unterminated(position, construct) =>
-      logger.write("unterminated \{construct}\{position_text(position)}")
+      logger.write("unterminated \{construct}\{position.text()}")
     InvalidEscape(position, message) =>
-      logger.write("\{message}\{position_text(position)}")
-    Syntax(position, message) =>
-      logger.write("\{message}\{position_text(position)}")
+      logger.write("\{message}\{position.text()}")
+    Syntax(position, message) => logger.write("\{message}\{position.text()}")
   }
 }
 

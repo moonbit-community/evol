@@ -1,5 +1,5 @@
 ///|
-fn operator_text(operator : Operator) -> String {
+fn Operator::text(operator : Operator) -> String {
   match operator {
     Assignment => "="
     Add => "+"
@@ -43,7 +43,7 @@ fn operator_text(operator : Operator) -> String {
 }
 
 ///|
-fn operator_is_word(operator : Operator) -> Bool {
+fn Operator::is_word(operator : Operator) -> Bool {
   match operator {
     In | InstanceOf | TypeOf | Void | Delete | Await | Yield | YieldStar => true
     _ => false
@@ -486,7 +486,7 @@ fn Printer::expression(self : Printer, id : Int) -> Unit {
     ClassExpression | ClassDeclaration => self.class(node.a)
     Unary => {
       let operator = self.program.operators[node.a]
-      self.text(operator_text(operator), operator_is_word(operator))
+      self.text(operator.text(), operator.is_word())
       self.expression(node.b)
     }
     Update =>
@@ -501,7 +501,7 @@ fn Printer::expression(self : Printer, id : Int) -> Unit {
       self.expression(node.b)
       let operator = self.program.operators[node.a]
       if operator != Operator::Assignment {
-        self.text(operator_text(operator), false)
+        self.text(operator.text(), false)
       }
       self.text("=", false)
       self.expression(node.c)
@@ -599,11 +599,11 @@ fn Printer::update_expression(
   is_prefix : Bool,
 ) -> Unit {
   if is_prefix {
-    self.text(operator_text(operator), false)
+    self.text(operator.text(), false)
     self.expression(operand)
   } else {
     self.expression(operand)
-    self.text(operator_text(operator), false)
+    self.text(operator.text(), false)
   }
 }
 
@@ -619,7 +619,7 @@ fn Printer::binary_expression(
     In => self.property_expression(left)
     _ => self.expression(left)
   }
-  self.text(operator_text(operator), operator_is_word(operator))
+  self.text(operator.text(), operator.is_word())
   self.expression(right)
 }
 
@@ -680,7 +680,7 @@ fn Printer::template_expression(
 }
 
 ///|
-fn needs_semicolon(kind : NodeKind) -> Bool {
+fn NodeKind::needs_semicolon(kind : NodeKind) -> Bool {
   match kind {
     ExpressionStatement
     | VariableDeclaration
@@ -747,7 +747,7 @@ fn Printer::statement(self : Printer, id : Int) -> Unit {
     }
     _ => abort("bad statement: \{node.kind.to_repr()}")
   }
-  guard needs_semicolon(node.kind) else { return }
+  guard node.kind.needs_semicolon() else { return }
   self.pending_semicolon = true
 }
 
@@ -907,7 +907,7 @@ fn Printer::declaration(self : Printer, node : Node) -> Unit {
 }
 
 ///|
-fn print(program : Program) -> String {
+fn Program::print(program : Program) -> String {
   let printer = Printer::new(program)
   let root = program.nodes[program.root]
   printer.statements(root.a, root.b)

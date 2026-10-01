@@ -71,7 +71,7 @@ fn PropertyAnalysis::key_name(
   computed : Bool,
 ) -> String? raise ParseError {
   let program = self.program
-  let node = program.nodes[property_leaf(program, id)]
+  let node = program.nodes[program.property_leaf(id)]
   guard node.kind == StringLiteral || node.kind == TemplateNoSubstitution else {
     return None
   }
@@ -94,7 +94,7 @@ fn PropertyAnalysis::collect_key(
 ) -> Unit raise ParseError {
   guard self.key_name(id, computed) is Some(name) else { return }
   self.keys[id] = name
-  self.literals.add(property_leaf(self.program, id))
+  self.literals.add(self.program.property_leaf(id))
 }
 
 ///|
@@ -184,7 +184,7 @@ fn PropertyAnalysis::select(
 }
 
 ///|
-fn prepare_properties(
+fn Program::prepare_properties(
   program : Program,
   requested : ArrayView[String],
 ) -> Unit raise ParseError {
@@ -208,7 +208,7 @@ priv struct PropertyFrequency {
 }
 
 ///|
-fn mangle_properties(program : Program) -> Unit {
+fn Program::mangle_properties(program : Program) -> Unit {
   guard !program.property_names.is_empty() || !program.member_names.is_empty() else {
     return
   }

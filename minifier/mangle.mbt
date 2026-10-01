@@ -1,5 +1,5 @@
 ///|
-fn short_name(ordinal : Int, alphabet : NameAlphabet) -> String {
+fn NameAlphabet::short_name(alphabet : NameAlphabet, ordinal : Int) -> String {
   let builder = StringBuilder()
   let first_radix = alphabet.first.length()
   let rest_radix = alphabet.rest.length()
@@ -26,15 +26,15 @@ let keywords : @hashset.HashSet[String] = @hashset.HashSet([
 ])
 
 ///|
-fn symbol_name(program : Program, symbol : Int) -> String {
+fn Program::symbol_name(program : Program, symbol : Int) -> String {
   program.names[program.symbols[symbol].name]
 }
 
 ///|
-fn mangle(program : Program, rename_top_level : Bool) -> Unit {
+fn Program::mangle(program : Program, rename_top_level : Bool) -> Unit {
   guard !program.has_dynamic_scope else { return }
   let reserved = program.reserve_symbol_names(rename_top_level)
-  program.alphabet = name_alphabet(program)
+  program.alphabet = program.name_alphabet()
   let declarations = program.renameable_declarations()
   let captured = program.captured_symbols()
   program.assign_symbol_names(reserved, declarations, captured)
@@ -67,7 +67,7 @@ fn Program::reserve_symbol_names(
       self.symbols[root_index] = { ..root, flags, }
     }
     if (flags & symbol_preserved) != 0 {
-      reserved.add(symbol_name(self, index))
+      reserved.add(self.symbol_name(index))
     }
   }
   reserved
@@ -96,13 +96,13 @@ fn Program::captured_symbols(self : Program) -> Array[@hashset.HashSet[Int]] {
   )
   for reference in self.references {
     guard reference.symbol >= 0 else { continue }
-    reserve_capture(self, captured, reference.scope, reference.symbol)
+    self.reserve_capture(captured, reference.scope, reference.symbol)
   }
   // Parameters copied into a function-body environment and linked catch/var
   // declarations also constrain names even when the binding is never read.
   for scope in 0..<self.scopes.length() {
     for _, symbol in self.scope_members[scope] {
-      reserve_capture(self, captured, scope, self.symbol_root(symbol))
+      self.reserve_capture(captured, scope, self.symbol_root(symbol))
     }
   }
   captured
@@ -151,7 +151,7 @@ fn Program::assign_symbol_names(
 ///|
 /// A binding's name must remain visible on the path from a use or declaration
 /// occurrence to its owning scope. Disjoint subtrees may reuse that name.
-fn reserve_capture(
+fn Program::reserve_capture(
   program : Program,
   captured : Array[@hashset.HashSet[Int]],
   scope : Int,

@@ -22,10 +22,10 @@ pub fn minify_with(
   rename_top_level : Bool,
   internal_properties? : ArrayView[String] = [],
 ) -> String raise ParseError {
-  let program = parse(source)
+  let program = Program::parse(source)
   program.resolve()
-  prepare_properties(program, internal_properties)
-  mangle(program, rename_top_level)
-  mangle_properties(program)
-  print(program)
+  program.prepare_properties(internal_properties)
+  program.mangle(rename_top_level)
+  program.mangle_properties()
+  program.print()
 }

@@ -275,7 +275,7 @@ fn Parser::property_key_with_computed(
 }
 
 ///|
-fn parse(source : String) -> Program raise ParseError {
+fn Program::parse(source : String) -> Program raise ParseError {
   let parser = Parser::new(source)
   parser.advance()
   let statements = parser.statements(true)
