@@ -1,13 +1,15 @@
 ///|
-/// Raw names keep the lexer's permissive non-ASCII rule, excluding trivia.
-/// Escaped characters are decoded and validated separately.
-const RAW_IDENTIFIER_RUN : Regex = re"^([A-Za-z0-9_$#]|[^\u0000-\u007F\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF])+"
+/// Raw names retain the existing permissive non-ASCII character set.
+const RAW_IDENTIFIER_START : Regex = re"(?:[A-Za-z_$]|[^\u0000-\u007F\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF])"
+
+///|
+const RAW_IDENTIFIER_CONTINUATION : Regex = re"(?:[A-Za-z0-9_$#]|[^\u0000-\u007F\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF])+"
 
 ///|
 fn raw_identifier_end(source : String, start : Int) -> Int {
   for position = start {
     let end = lexmatch source.view(start_offset=position) with longest {
-      (RAW_IDENTIFIER_RUN, after=rest) => rest.start_offset()
+      (re"^" + RAW_IDENTIFIER_CONTINUATION, after=rest) => rest.start_offset()
       _ => position
     }
     // Regex matches Unicode scalars; raw identifiers also accept lone surrogates.
@@ -19,12 +21,11 @@ fn raw_identifier_end(source : String, start : Int) -> Int {
 }
 
 ///|
-fn Lexer::identifier(self : Lexer) -> Unit raise ParseError {
-  lexmatch self.source.view(start_offset=self.position) {
-    (re"^#", after=rest) => self.position = rest.start_offset()
-    _ => ()
-  }
-  let name_start = self.position
+/// Continue a name only when escapes or ill-formed UTF-16 interrupt a raw run.
+fn Lexer::identifier_tail(
+  self : Lexer,
+  name_start : Int,
+) -> Unit raise ParseError {
   while self.position < self.source.length() {
     self.position = raw_identifier_end(self.source, self.position)
     lexmatch self.source.view(start_offset=self.position) {
@@ -50,6 +51,7 @@ fn Lexer::identifier(self : Lexer) -> Unit raise ParseError {
     raise self.syntax_error("identifier expected")
   }
   self.token = Identifier
+  self.keyword = NotKeyword
   self.end = self.position
 }
 

@@ -272,7 +272,7 @@ priv struct Program {
   preserved_names : Map[Int, Bool]
   names : Array[String]
   generated_names : Array[String]
-  identifier_ids : Map[StringView, Int]
+  identifier_ids : IdentifierTable
   mut has_dynamic_scope : Bool
   mut cover_defaults : Int
   character_counts : Array[Int]
@@ -300,11 +300,7 @@ fn Program::new(source : String) -> Program {
     preserved_names: {},
     names: ["arguments", "eval", "__proto__"],
     generated_names: [],
-    identifier_ids: {
-      "arguments": name_arguments,
-      "eval": name_eval,
-      "__proto__": name_proto,
-    },
+    identifier_ids: IdentifierTable::new(),
     has_dynamic_scope: false,
     cover_defaults: 0,
     character_counts: Array::make(NAME_REST.length(), 0),
@@ -331,18 +327,26 @@ fn Program::node(
 }
 
 ///|
+fn Program::add_reference(self : Program, reference : Reference) -> Int {
+  self.references.push(reference)
+  self.references.length() - 1
+}
+
+///|
 fn Program::add_operator(self : Program, operator : Operator) -> Int {
   self.operators.push(operator)
   self.operators.length() - 1
 }
 
 ///|
-fn Program::edge_list(self : Program, items : Array[Int]) -> (Int, Int) {
+fn Program::edge_list(self : Program, items : PendingEdges) -> EdgeRange {
   let offset = self.edges.length()
-  for item in items {
+  let count = items.length()
+  for item in items.view() {
     self.edges.push(item)
   }
-  (offset, items.length())
+  items.release()
+  { offset, count, }
 }
 
 ///|
@@ -424,14 +428,21 @@ fn Program::identifier(
     spelling.to_owned()
   }
   if escaped && self.identifier_ids.get(name[:]) is Some(id) {
-    self.identifier_ids[spelling] = id
+    self.identifier_ids.insert(spelling, id)
     return id
   }
   let id = self.names.length()
   self.names.push(name)
-  self.identifier_ids[spelling] = id
+  self.identifier_ids.insert(spelling, id)
   if escaped {
-    self.identifier_ids[name[:]] = id
+    self.identifier_ids.insert(name[:], id)
   }
   id
+}
+
+///|
+#valtype
+priv struct EdgeRange {
+  offset : Int
+  count : Int
 }

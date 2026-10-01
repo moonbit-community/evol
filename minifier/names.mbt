@@ -11,7 +11,17 @@ const NAME_FIRST : String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY
 const NAME_REST : String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$0123456789"
 
 ///|
-const LATIN_ALPHABET_SIZE : Int = 26
+const ASCII_CHARACTER_COUNT : Int = 128
+
+///|
+// Inverse of NAME_REST. A missing character has no frequency bucket.
+let name_character_slots : Array[Int] = {
+  let slots = Array::make(ASCII_CHARACTER_COUNT, -1)
+  for slot in 0..<NAME_REST.length() {
+    slots[NAME_REST[slot].to_int()] = slot
+  }
+  slots
+}
 
 ///|
 priv struct NameGenerator {
@@ -47,29 +57,10 @@ fn count_characters(
   delta : Int,
 ) -> Unit {
   for index in start..<end {
-    guard source.get_char(index) is Some(character) else { continue }
-    guard name_character_index(character) is Some(slot) else { continue }
+    let slot = name_character_slots.get(source[index].to_int()).unwrap_or(-1)
+    guard slot >= 0 else { continue }
     counts[slot] += delta
   }
-}
-
-///|
-/// Indices follow NAME_REST: lowercase, uppercase, underscore, dollar, digits.
-fn name_character_index(character : Char) -> Int? {
-  let slot = if character.is_ascii_lowercase() {
-    character.to_int() - 'a'.to_int()
-  } else if character.is_ascii_uppercase() {
-    character.to_int() - 'A'.to_int() + LATIN_ALPHABET_SIZE
-  } else if character == '_' {
-    LATIN_ALPHABET_SIZE * 2
-  } else if character == '$' {
-    LATIN_ALPHABET_SIZE * 2 + 1
-  } else if character.is_ascii_digit() {
-    character.to_int() - '0'.to_int() + NAME_FIRST.length()
-  } else {
-    return None
-  }
-  Some(slot)
 }
 
 ///|
@@ -81,11 +72,10 @@ fn name_alphabet(program : Program) -> NameAlphabet {
 ///|
 fn unchanged_character_counts(program : Program) -> Array[Int] {
   let counts = program.character_counts.copy()
-  let counted_removals : Map[Int, Bool] = Map([])
+  let counted_removals : @hashset.HashSet[Int] = @hashset.HashSet([])
   let subtract_name = (start, end) => {
-    guard !counted_removals.contains(start) else { return }
+    guard counted_removals.add_and_check(start) else { return }
     count_characters(program.source, start, end, counts, -1)
-    counted_removals[start] = true
   }
   for reference in program.references {
     if reference.symbol >= 0 &&

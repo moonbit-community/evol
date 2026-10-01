@@ -26,9 +26,11 @@ fn Parser::module_node(self : Parser, statement : ModuleStatement) -> Int {
 ///|
 fn Parser::expect_keyword(
   self : Parser,
-  keyword : String,
+  keyword : Keyword,
 ) -> Unit raise ParseError {
-  guard self.lexer.is_keyword(keyword) else { raise self.unexpected(keyword) }
+  guard self.lexer.keyword == keyword else {
+    raise self.unexpected(keyword.spelling())
+  }
   self.advance()
 }
 
@@ -60,7 +62,7 @@ fn Parser::module_source(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::import_attributes(self : Parser) -> Int raise ParseError {
-  guard self.lexer.is_keyword("with") else { return -1 }
+  guard self.lexer.keyword == Keyword::With else { return -1 }
   self.advance()
   self.object_literal()
 }
@@ -70,7 +72,7 @@ fn Parser::parse_import(self : Parser) -> Int raise ParseError {
   guard self.scope == 0 else {
     raise self.syntax_error("import must be at module top level")
   }
-  self.expect_keyword("import")
+  self.expect_keyword(Keyword::Import)
   let bindings = if self.lexer.token == StringLiteral {
     []
   } else {
@@ -94,13 +96,13 @@ fn Parser::import_bindings(
   let has_more = !has_default || self.eat(Comma)
   if has_more {
     if self.eat(Asterisk) {
-      self.expect_keyword("as")
+      self.expect_keyword(Keyword::As)
       bindings.push(Namespace(self.import_binding()))
     } else {
       self.named_import_bindings(bindings)
     }
   }
-  self.expect_keyword("from")
+  self.expect_keyword(Keyword::From)
   bindings
 }
 
@@ -112,7 +114,7 @@ fn Parser::named_import_bindings(
   self.expect(LeftBrace)
   while self.lexer.token != RightBrace {
     let imported = self.module_name()
-    let reference = if self.lexer.is_keyword("as") {
+    let reference = if self.lexer.keyword == Keyword::As {
       self.advance()
       self.import_binding()
     } else {
@@ -134,9 +136,9 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
   guard self.scope == 0 else {
     raise self.syntax_error("export must be at module top level")
   }
-  self.expect_keyword("export")
+  self.expect_keyword(Keyword::Export)
   let statement = match self.lexer.token {
-    _ if self.lexer.is_keyword("default") => self.default_export()
+    _ if self.lexer.keyword == Keyword::Default => self.default_export()
     Asterisk => self.namespace_export()
     LeftBrace => self.named_export()
     _ => self.export_declaration()
@@ -147,9 +149,12 @@ fn Parser::parse_export(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::default_export(self : Parser) -> ModuleStatement raise ParseError {
   self.advance()
-  let is_declaration = self.lexer.is_keyword("function") ||
-    self.lexer.is_keyword("class") ||
-    (self.lexer.is_keyword("async") && self.peek_is_keyword("function"))
+  let is_declaration = self.lexer.keyword == Keyword::Function ||
+    self.lexer.keyword == Keyword::Class ||
+    (
+      self.lexer.keyword == Keyword::Async &&
+      self.peek_is_keyword(Keyword::Function)
+    )
   let body = if is_declaration {
     self.statement()
   } else {
@@ -164,13 +169,13 @@ fn Parser::default_export(self : Parser) -> ModuleStatement raise ParseError {
 ///|
 fn Parser::namespace_export(self : Parser) -> ModuleStatement raise ParseError {
   self.advance()
-  let export_name = if self.lexer.is_keyword("as") {
+  let export_name = if self.lexer.keyword == Keyword::As {
     self.advance()
     self.module_name()
   } else {
     -1
   }
-  self.expect_keyword("from")
+  self.expect_keyword(Keyword::From)
   let source = self.module_source()
   let attributes = self.import_attributes()
   self.eat_semicolon()
@@ -183,7 +188,7 @@ fn Parser::named_export(self : Parser) -> ModuleStatement raise ParseError {
   let names : Array[(Int, Int)] = []
   while self.lexer.token != RightBrace {
     let source_name = self.module_name()
-    let exported = if self.lexer.is_keyword("as") {
+    let exported = if self.lexer.keyword == Keyword::As {
       self.advance()
       self.module_name()
     } else {
@@ -193,7 +198,7 @@ fn Parser::named_export(self : Parser) -> ModuleStatement raise ParseError {
     guard self.eat(Comma) else { break }
   }
   self.expect(RightBrace)
-  let source = if self.lexer.is_keyword("from") {
+  let source = if self.lexer.keyword == Keyword::From {
     self.advance()
     self.module_source()
   } else {

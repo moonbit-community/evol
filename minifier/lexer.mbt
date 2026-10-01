@@ -4,6 +4,7 @@ priv struct Lexer {
   // The next unread UTF-16 code unit; token spans are [start, end).
   mut position : Int
   mut token : Token
+  mut keyword : Keyword
   mut start : Int
   mut end : Int
   mut newline_before : Bool
@@ -17,6 +18,7 @@ fn Lexer::new(source : String) -> Lexer {
     source,
     position: 0,
     token: EndOfFile,
+    keyword: NotKeyword,
     start: 0,
     end: 0,
     newline_before: false,
@@ -30,6 +32,7 @@ fn Lexer::new(source : String) -> Lexer {
 priv struct LexerSnapshot {
   position : Int
   token : Token
+  keyword : Keyword
   start : Int
   end : Int
   newline_before : Bool
@@ -42,6 +45,7 @@ fn Lexer::snapshot(self : Lexer) -> LexerSnapshot {
   {
     position: self.position,
     token: self.token,
+    keyword: self.keyword,
     start: self.start,
     end: self.end,
     newline_before: self.newline_before,
@@ -54,6 +58,7 @@ fn Lexer::snapshot(self : Lexer) -> LexerSnapshot {
 fn Lexer::restore(self : Lexer, other : LexerSnapshot) -> Unit {
   self.position = other.position
   self.token = other.token
+  self.keyword = other.keyword
   self.start = other.start
   self.end = other.end
   self.newline_before = other.newline_before
@@ -82,14 +87,6 @@ fn Lexer::invalid_escape(self : Lexer, message : String) -> ParseError {
 }
 
 ///|
-fn Lexer::is_keyword(self : Lexer, keyword : String) -> Bool {
-  self.token == Identifier &&
-  self.source
-  .view(start_offset=self.start, end_offset=self.end)
-  .equal_to_string(keyword)
-}
-
-///|
 const LINE_TERMINATORS : Regex = re"[\n\r\u2028\u2029]+"
 
 ///|
@@ -106,35 +103,6 @@ const NUMBER_SPELLING : Regex = re"0[xX][0-9a-fA-F_]*n?" |
   re"0[bB][01_]*n?" |
   re"0[oO][0-7_]*n?" |
   (DECIMAL_MANTISSA + re"(?:[eE][+\-]?[0-9_]*)?n?")
-
-///|
-fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
-  while true {
-    lexmatch self.source.view(start_offset=self.position) with longest {
-      (re"^" + LINE_TERMINATORS, after=rest) => {
-        self.newline_before = true
-        self.position = rest.start_offset()
-      }
-      (re"^" + TOKEN_WHITESPACE, after=rest) =>
-        self.position = rest.start_offset()
-      (re"^//[^\n\r\u2028\u2029]*", after=rest) => {
-        self.position = rest.start_offset()
-        self.line_comment_tail()
-      }
-      (re"^#![^\n\r\u2028\u2029]*", after=rest) => {
-        guard self.position == 0 else { return }
-        self.position = rest.start_offset()
-        self.line_comment_tail()
-      }
-      (re"^/\*", after=rest) => {
-        let comment_start = self.position
-        self.position = rest.start_offset()
-        self.block_comment_tail(comment_start)
-      }
-      _ => return
-    }
-  }
-}
 
 ///|
 // Only ill-formed UTF-16 can interrupt the regex before the end of a line.
@@ -185,98 +153,192 @@ fn Lexer::finish_token(self : Lexer, token : Token, rest : StringView) -> Unit {
 }
 
 ///|
+fn Lexer::finish_identifier(
+  self : Lexer,
+  rest : StringView,
+) -> Unit raise ParseError {
+  if rest.length() > 0 && rest.get_char(0) is None {
+    self.position = rest.start_offset()
+    return self.identifier_tail(self.start)
+  }
+  let spelling = self.source.view(
+    start_offset=self.start,
+    end_offset=rest.start_offset(),
+  )
+  self.keyword = keyword_of(spelling)
+  self.finish_token(Identifier, rest)
+}
+
+///|
 fn Lexer::next(self : Lexer) -> Unit raise ParseError {
   self.newline_before = false
-  self.skip_trivia()
-  self.start = self.position
+  self.keyword = NotKeyword
+  while true {
+    self.start = self.position
+    lexmatch self.source.view(start_offset=self.position) {
+      (re"^" + LINE_TERMINATORS, after=rest) => {
+        self.newline_before = true
+        self.position = rest.start_offset()
+        continue
+      }
+      (re"^" + TOKEN_WHITESPACE, after=rest) => {
+        self.position = rest.start_offset()
+        continue
+      }
+      (re"^//[^\n\r\u2028\u2029]*", after=rest) => {
+        self.position = rest.start_offset()
+        self.line_comment_tail()
+        continue
+      }
+      (re"^#![^\n\r\u2028\u2029]*", after=rest) => {
+        guard self.position == 0 else {
+          self.position += 1
+          return self.identifier_tail(self.position)
+        }
+        self.position = rest.start_offset()
+        self.line_comment_tail()
+        continue
+      }
+      (re"^/\*", after=rest) => {
+        let comment_start = self.position
+        self.position = rest.start_offset()
+        self.block_comment_tail(comment_start)
+        continue
+      }
+      (re"^[0-9]|^\.[0-9]", after=_) => return self.number_token()
+      (re"^" + RAW_IDENTIFIER_START, after=rest) =>
+        return self.identifier_token(rest)
+      (re"^#", after=rest) => {
+        self.position = rest.start_offset()
+        return self.identifier_tail(self.position)
+      }
+      (re"^\\", after=_) => return self.identifier_tail(self.position)
+      (re"^'", after=_) => return self.string('\'')
+      (re"^\"", after=_) => return self.string('"')
+      (re"^`", after=rest) => {
+        self.position = rest.start_offset()
+        return self.template_chunk(true)
+      }
+      (re"^$", after=rest) => return self.finish_token(EndOfFile, rest)
+      (re"^\(", after=rest) => return self.finish_token(LeftParenthesis, rest)
+      (re"^\)", after=rest) => return self.finish_token(RightParenthesis, rest)
+      (re"^\[", after=rest) => return self.finish_token(LeftBracket, rest)
+      (re"^\]", after=rest) => return self.finish_token(RightBracket, rest)
+      (re"^[{]", after=rest) => return self.finish_token(LeftBrace, rest)
+      (re"^[}]", after=rest) => return self.finish_token(RightBrace, rest)
+      (re"^;", after=rest) => return self.finish_token(Semicolon, rest)
+      (re"^,", after=rest) => return self.finish_token(Comma, rest)
+      (re"^:", after=rest) => return self.finish_token(Colon, rest)
+      (re"^~", after=rest) => return self.finish_token(Tilde, rest)
+      _ => return self.operator_token()
+    }
+  }
+}
+
+///|
+fn Lexer::number_token(self : Lexer) -> Unit {
   lexmatch self.source.view(start_offset=self.position) with longest {
     (re"^" + NUMBER_SPELLING, after=rest) => self.finish_token(Number, rest)
-    (re"^(?:[A-Za-z_$#\\]|[^\u0000-\u007F])", after=_) => self.identifier()
-    (re"^'", after=_) => self.string('\'')
-    (re"^\"", after=_) => self.string('"')
-    (re"^`", after=rest) => {
-      self.position = rest.start_offset()
-      self.template_chunk(true)
-    }
-    (re"^$", after=rest) => self.finish_token(EndOfFile, rest)
-    _ =>
-      if self.source.get_char(self.position) is None {
-        self.identifier()
-      } else {
-        self.punctuation()
+    _ => abort("number dispatch requires a number prefix")
+  }
+}
+
+///|
+fn Lexer::identifier_token(
+  self : Lexer,
+  tail : StringView,
+) -> Unit raise ParseError {
+  // Scan the common ASCII run with a small automaton, then handle names that
+  // continue through an escape or a non-ASCII character.
+  lexmatch tail with longest {
+    (re"^[A-Za-z0-9_$#]*", after=rest) =>
+      lexmatch rest {
+        (re"^\\" | re"^" + RAW_IDENTIFIER_START, after=_) => {
+          self.position = rest.start_offset()
+          self.identifier_tail(self.start)
+        }
+        _ => self.finish_identifier(rest)
       }
   }
 }
 
 ///|
-fn Lexer::punctuation(self : Lexer) -> Unit raise ParseError {
-  let (token, rest) : (Token, StringView) = lexmatch
-    self.source.view(start_offset=self.position) with longest {
-    (re"^\(", after=rest) => (LeftParenthesis, rest)
-    (re"^\)", after=rest) => (RightParenthesis, rest)
-    (re"^\[", after=rest) => (LeftBracket, rest)
-    (re"^\]", after=rest) => (RightBracket, rest)
-    (re"^[{]", after=rest) => (LeftBrace, rest)
-    (re"^[}]", after=rest) => (RightBrace, rest)
-    (re"^;", after=rest) => (Semicolon, rest)
-    (re"^,", after=rest) => (Comma, rest)
-    (re"^:", after=rest) => (Colon, rest)
-    (re"^~", after=rest) => (Tilde, rest)
-    (re"^\?", after=rest) => (Question, rest)
-    (re"^\?\?", after=rest) => (NullishCoalescing, rest)
-    (re"^\?\?=", after=rest) => (NullishCoalescingAssignment, rest)
-    (re"^\.", after=rest) => (Dot, rest)
-    (re"^\.\.\.", after=rest) => (Ellipsis, rest)
-    (re"^=", after=rest) => (Assignment, rest)
-    (re"^=>", after=rest) => (Arrow, rest)
-    (re"^==", after=rest) => (Equal, rest)
-    (re"^===", after=rest) => (StrictlyEqual, rest)
-    (re"^!", after=rest) => (LogicalNot, rest)
-    (re"^!=", after=rest) => (NotEqual, rest)
-    (re"^!==", after=rest) => (StrictlyNotEqual, rest)
-    (re"^<", after=rest) => (LessThan, rest)
-    (re"^<=", after=rest) => (LessThanOrEqual, rest)
-    (re"^<<", after=rest) => (ShiftLeft, rest)
-    (re"^<<=", after=rest) => (LeftShiftAssignment, rest)
-    (re"^>", after=rest) => (GreaterThan, rest)
-    (re"^>=", after=rest) => (GreaterThanOrEqual, rest)
-    (re"^>>", after=rest) => (ShiftRight, rest)
-    (re"^>>=", after=rest) => (RightShiftAssignment, rest)
-    (re"^>>>", after=rest) => (UnsignedShiftRight, rest)
-    (re"^>>>=", after=rest) => (UnsignedRightShiftAssignment, rest)
-    (re"^&", after=rest) => (BitwiseAnd, rest)
-    (re"^&=", after=rest) => (BitwiseAndAssignment, rest)
-    (re"^&&", after=rest) => (LogicalAnd, rest)
-    (re"^&&=", after=rest) => (LogicalAndAssignment, rest)
-    (re"^\|", after=rest) => (BitwiseOr, rest)
-    (re"^\|=", after=rest) => (BitwiseOrAssignment, rest)
-    (re"^\|\|", after=rest) => (LogicalOr, rest)
-    (re"^\|\|=", after=rest) => (LogicalOrAssignment, rest)
-    (re"^\^", after=rest) => (BitwiseXor, rest)
-    (re"^\^=", after=rest) => (BitwiseXorAssignment, rest)
-    (re"^\+", after=rest) => (Plus, rest)
-    (re"^\+\+", after=rest) => (Increment, rest)
-    (re"^\+=", after=rest) => (AdditionAssignment, rest)
-    (re"^-", after=rest) => (Minus, rest)
-    (re"^--", after=rest) => (Decrement, rest)
-    (re"^-=", after=rest) => (SubtractionAssignment, rest)
-    (re"^\*", after=rest) => (Asterisk, rest)
-    (re"^\*\*", after=rest) => (ExponentiationOperator, rest)
-    (re"^\*=", after=rest) => (MultiplicationAssignment, rest)
-    (re"^\*\*=", after=rest) => (ExponentiationAssignment, rest)
-    (re"^%", after=rest) => (Percent, rest)
-    (re"^%=", after=rest) => (ModuloAssignment, rest)
-    (re"^/", after=rest) => (Slash, rest)
-    (re"^/=", after=rest) => (DivisionAssignment, rest)
+fn Lexer::operator_token(self : Lexer) -> Unit raise ParseError {
+  lexmatch self.source.view(start_offset=self.position) with longest {
+    (re"^\?", after=rest) => return self.finish_token(Question, rest)
+    (re"^\?\?", after=rest) => return self.finish_token(NullishCoalescing, rest)
+    (re"^\?\?=", after=rest) =>
+      return self.finish_token(NullishCoalescingAssignment, rest)
+    (re"^\.", after=rest) => return self.finish_token(Dot, rest)
+    (re"^\.\.\.", after=rest) => return self.finish_token(Ellipsis, rest)
+    (re"^=", after=rest) => return self.finish_token(Assignment, rest)
+    (re"^=>", after=rest) => return self.finish_token(Arrow, rest)
+    (re"^==", after=rest) => return self.finish_token(Equal, rest)
+    (re"^===", after=rest) => return self.finish_token(StrictlyEqual, rest)
+    (re"^!", after=rest) => return self.finish_token(LogicalNot, rest)
+    (re"^!=", after=rest) => return self.finish_token(NotEqual, rest)
+    (re"^!==", after=rest) => return self.finish_token(StrictlyNotEqual, rest)
+    (re"^<", after=rest) => return self.finish_token(LessThan, rest)
+    (re"^<=", after=rest) => return self.finish_token(LessThanOrEqual, rest)
+    (re"^<<", after=rest) => return self.finish_token(ShiftLeft, rest)
+    (re"^<<=", after=rest) =>
+      return self.finish_token(LeftShiftAssignment, rest)
+    (re"^>", after=rest) => return self.finish_token(GreaterThan, rest)
+    (re"^>=", after=rest) => return self.finish_token(GreaterThanOrEqual, rest)
+    (re"^>>", after=rest) => return self.finish_token(ShiftRight, rest)
+    (re"^>>=", after=rest) =>
+      return self.finish_token(RightShiftAssignment, rest)
+    (re"^>>>", after=rest) => return self.finish_token(UnsignedShiftRight, rest)
+    (re"^>>>=", after=rest) =>
+      return self.finish_token(UnsignedRightShiftAssignment, rest)
+    (re"^&", after=rest) => return self.finish_token(BitwiseAnd, rest)
+    (re"^&=", after=rest) =>
+      return self.finish_token(BitwiseAndAssignment, rest)
+    (re"^&&", after=rest) => return self.finish_token(LogicalAnd, rest)
+    (re"^&&=", after=rest) =>
+      return self.finish_token(LogicalAndAssignment, rest)
+    (re"^\|", after=rest) => return self.finish_token(BitwiseOr, rest)
+    (re"^\|=", after=rest) =>
+      return self.finish_token(BitwiseOrAssignment, rest)
+    (re"^\|\|", after=rest) => return self.finish_token(LogicalOr, rest)
+    (re"^\|\|=", after=rest) =>
+      return self.finish_token(LogicalOrAssignment, rest)
+    (re"^\^", after=rest) => return self.finish_token(BitwiseXor, rest)
+    (re"^\^=", after=rest) =>
+      return self.finish_token(BitwiseXorAssignment, rest)
+    (re"^\+", after=rest) => return self.finish_token(Plus, rest)
+    (re"^\+\+", after=rest) => return self.finish_token(Increment, rest)
+    (re"^\+=", after=rest) => return self.finish_token(AdditionAssignment, rest)
+    (re"^-", after=rest) => return self.finish_token(Minus, rest)
+    (re"^--", after=rest) => return self.finish_token(Decrement, rest)
+    (re"^-=", after=rest) =>
+      return self.finish_token(SubtractionAssignment, rest)
+    (re"^\*", after=rest) => return self.finish_token(Asterisk, rest)
+    (re"^\*\*", after=rest) =>
+      return self.finish_token(ExponentiationOperator, rest)
+    (re"^\*=", after=rest) =>
+      return self.finish_token(MultiplicationAssignment, rest)
+    (re"^\*\*=", after=rest) =>
+      return self.finish_token(ExponentiationAssignment, rest)
+    (re"^%", after=rest) => return self.finish_token(Percent, rest)
+    (re"^%=", after=rest) => return self.finish_token(ModuloAssignment, rest)
+    (re"^/", after=rest) => return self.finish_token(Slash, rest)
+    (re"^/=", after=rest) => return self.finish_token(DivisionAssignment, rest)
     // Before a digit, ? starts a conditional and the dot belongs to a number.
     (re"^\?\.[0-9]", after=_) =>
-      (Question, self.source.view(start_offset=self.position + 1))
-    (re"^\?\.", after=rest) => (OptionalChaining, rest)
-    _ =>
+      return self.finish_token(
+        Question,
+        self.source.view(start_offset=self.position + 1),
+      )
+    (re"^\?\.", after=rest) => return self.finish_token(OptionalChaining, rest)
+    _ => {
+      if self.source.get_char(self.position) is None {
+        return self.identifier_tail(self.position)
+      }
       raise UnexpectedCharacter(
         position_at(self.source, self.position),
         self.source[self.position].to_int().to_char().unwrap_or('?'),
       )
+    }
   }
-  self.finish_token(token, rest)
 }

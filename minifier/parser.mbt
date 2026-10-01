@@ -2,6 +2,7 @@
 priv struct Parser {
   program : Program
   lexer : Lexer
+  pending_edges : Array[Int]
   mut scope : Int
   mut allow_in : Bool
   mut in_generator : Bool
@@ -12,6 +13,7 @@ fn Parser::new(source : String) -> Parser {
   {
     program: Program::new(source),
     lexer: Lexer::new(source),
+    pending_edges: [],
     scope: 0,
     allow_in: true,
     in_generator: false,
@@ -81,12 +83,12 @@ fn Parser::peek_token(self : Parser) -> Token raise ParseError {
 ///|
 fn Parser::peek_is_keyword(
   self : Parser,
-  keyword : String,
+  keyword : Keyword,
 ) -> Bool raise ParseError {
   let snapshot = self.lexer.snapshot()
   self.lexer.next()
   let matches_keyword = !self.lexer.newline_before &&
-    self.lexer.is_keyword(keyword)
+    self.lexer.keyword == keyword
   self.lexer.restore(snapshot)
   matches_keyword
 }
@@ -110,14 +112,13 @@ fn Parser::add_reference(
   name_start : Int,
   name_end : Int,
 ) -> Int raise ParseError {
-  self.program.references.push({
+  self.program.add_reference({
     scope: scope_id,
     name_start,
     name_end,
     name: self.program.identifier(name_start, name_end),
     symbol: -1,
   })
-  self.program.references.length() - 1
 }
 
 ///|
@@ -138,12 +139,13 @@ fn Parser::declare_symbol(
     }
     scope = self.program.scopes[scope].parent
   }
-  let reference = self.add_reference(self.scope, name_start, name_end)
-  self.program.references[reference] = {
-    ..self.program.references[reference],
+  self.program.add_reference({
+    scope: self.scope,
+    name_start,
+    name_end,
+    name,
     symbol,
-  }
-  reference
+  })
 }
 
 ///|
@@ -200,7 +202,7 @@ fn Parser::pattern_atom(self : Parser, scope_id : Int) -> Int raise ParseError {
 ///|
 fn Parser::array_pattern(self : Parser, scope_id : Int) -> Int raise ParseError {
   self.expect(LeftBracket)
-  let items : Array[Int] = []
+  let items = self.begin_edges()
   while self.lexer.token != RightBracket && self.lexer.token != EndOfFile {
     if self.lexer.token == Comma {
       self.advance()
@@ -219,7 +221,7 @@ fn Parser::array_pattern(self : Parser, scope_id : Int) -> Int raise ParseError 
     }
   }
   self.expect(RightBracket)
-  let (offset, count) = self.program.edge_list(items)
+  let { offset, count, } = self.program.edge_list(items)
   self.program.node(PatternArray, offset, count, 0, 0)
 }
 
@@ -229,7 +231,7 @@ fn Parser::object_pattern(
   scope_id : Int,
 ) -> Int raise ParseError {
   self.expect(LeftBrace)
-  let items : Array[Int] = []
+  let items = self.begin_edges()
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
     if self.lexer.token == Ellipsis {
       self.advance()
@@ -243,7 +245,7 @@ fn Parser::object_pattern(
     }
   }
   self.expect(RightBrace)
-  let (offset, count) = self.program.edge_list(items)
+  let { offset, count, } = self.program.edge_list(items)
   self.program.node(PatternObject, offset, count, 0, 0)
 }
 
@@ -290,7 +292,7 @@ fn parse(source : String) -> Program raise ParseError {
   let parser = Parser::new(source)
   parser.advance()
   let statements = parser.statements(true)
-  let (offset, count) = parser.program.edge_list(statements)
+  let { offset, count, } = parser.program.edge_list(statements)
   parser.program.root = parser.program.node(Block, offset, count, 0, 0)
   guard parser.program.cover_defaults == 0 else {
     raise parser.syntax_error(
@@ -304,8 +306,8 @@ fn parse(source : String) -> Program raise ParseError {
 fn Parser::statements(
   self : Parser,
   is_top_level : Bool,
-) -> Array[Int] raise ParseError {
-  let output : Array[Int] = []
+) -> PendingEdges raise ParseError {
+  let output = self.begin_edges()
   while self.lexer.token != EndOfFile && self.lexer.token != RightBrace {
     output.push(self.statement())
   }
@@ -330,81 +332,80 @@ fn Parser::statement(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::identifier_statement(self : Parser) -> Int raise ParseError {
-  match () {
-    _ if self.lexer.is_keyword("import") && self.is_import_declaration() =>
-      self.parse_import()
-    _ if self.lexer.is_keyword("export") => self.parse_export()
-    _ if self.lexer.is_keyword("var") => {
+  match self.lexer.keyword {
+    Import if self.is_import_declaration() => self.parse_import()
+    Export => self.parse_export()
+    Var => {
       self.advance()
       self.declaration(DECLARATION_VAR)
     }
-    _ if self.lexer.is_keyword("let") && self.peek_token() != Colon => {
+    Let if self.peek_token() != Colon => {
       self.advance()
       self.declaration(DECLARATION_LET)
     }
-    _ if self.lexer.is_keyword("const") => {
+    Const => {
       self.advance()
       self.declaration(DECLARATION_CONST)
     }
-    _ if self.lexer.is_keyword("async") && self.peek_is_keyword("function") => {
+    Async if self.peek_is_keyword(Keyword::Function) => {
       self.advance()
       self.advance()
       self.function(true, is_async=true)
     }
-    _ if self.lexer.is_keyword("function") => {
+    Function => {
       self.advance()
       self.function(true)
     }
-    _ if self.lexer.is_keyword("class") => {
+    Class => {
       self.advance()
       self.class(true)
     }
-    _ if self.lexer.is_keyword("if") => {
+    If => {
       self.advance()
       self.parse_if()
     }
-    _ if self.lexer.is_keyword("for") => {
+    For => {
       self.advance()
       self.parse_for()
     }
-    _ if self.lexer.is_keyword("while") => {
+    While => {
       self.advance()
       self.parse_while()
     }
-    _ if self.lexer.is_keyword("do") => {
+    Do => {
       self.advance()
       self.parse_do_while()
     }
-    _ if self.lexer.is_keyword("return") => {
+    Return => {
       self.advance()
       self.parse_return()
     }
-    _ if self.lexer.is_keyword("throw") => {
+    Throw => {
       self.advance()
       self.parse_throw()
     }
-    _ if self.lexer.is_keyword("break") => {
+    Break => {
       self.advance()
       self.jump(true)
     }
-    _ if self.lexer.is_keyword("continue") => {
+    Continue => {
       self.advance()
       self.jump(false)
     }
-    _ if self.lexer.is_keyword("switch") => {
+    Switch => {
       self.advance()
       self.parse_switch()
     }
-    _ if self.lexer.is_keyword("try") => {
+    Try => {
       self.advance()
       self.parse_try()
     }
-    _ if self.lexer.is_keyword("debugger") => {
+    Debugger => {
       self.advance()
       self.eat_semicolon()
       self.program.node(Debugger, 0, 0, 0, 0)
     }
-    _ if self.lexer.is_keyword("with") => {
+    With => {
       self.advance()
       self.parse_with()
     }
@@ -441,7 +442,7 @@ fn Parser::block(self : Parser) -> Int raise ParseError {
   let statements = self.statements(false)
   self.scope = outer_scope
   self.expect(RightBrace)
-  let (offset, count) = self.program.edge_list(statements)
+  let { offset, count, } = self.program.edge_list(statements)
   self.program.node(Block, offset, count, 0, 0)
 }
 
@@ -449,7 +450,7 @@ fn Parser::block(self : Parser) -> Int raise ParseError {
 fn Parser::declaration(self : Parser, kind : Int) -> Int raise ParseError {
   let declarations = self.declarators(kind)
   self.eat_semicolon()
-  let (offset, count) = self.program.edge_list(declarations)
+  let { offset, count, } = self.program.edge_list(declarations)
   self.program.node(VariableDeclaration, kind, offset, count, 0)
 }
 
@@ -460,7 +461,7 @@ fn Parser::parse_if(self : Parser) -> Int raise ParseError {
   self.expect(RightParenthesis)
   let consequent = self.statement()
   let alternate = if self.lexer.token == Identifier &&
-    self.lexer.is_keyword("else") {
+    self.lexer.keyword == Keyword::Else {
     self.advance()
     self.statement()
   } else {
@@ -481,7 +482,7 @@ fn Parser::parse_while(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::parse_do_while(self : Parser) -> Int raise ParseError {
   let body = self.statement()
-  guard self.lexer.token == Identifier && self.lexer.is_keyword("while") else {
+  guard self.lexer.token == Identifier && self.lexer.keyword == Keyword::While else {
     raise self.unexpected("while")
   }
   self.advance()
@@ -494,7 +495,7 @@ fn Parser::parse_do_while(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::parse_for(self : Parser) -> Int raise ParseError {
-  let is_await = self.lexer.is_keyword("await")
+  let is_await = self.lexer.keyword == Keyword::Await
   if is_await {
     self.advance()
   }
@@ -503,13 +504,13 @@ fn Parser::parse_for(self : Parser) -> Int raise ParseError {
   self.scope = self.program.push_scope(outer_scope, scope_block)
   let (initializer, is_declaration) = self.for_initializer()
   match self.lexer.token {
-    Identifier if self.lexer.is_keyword("of") => {
+    Identifier if self.lexer.keyword == Keyword::Of => {
       if !is_declaration {
         self.assignment_pattern(initializer)
       }
       self.for_of_tail(initializer, is_await, outer_scope)
     }
-    Identifier if self.lexer.is_keyword("in") => {
+    Identifier if self.lexer.keyword == Keyword::In => {
       guard !is_await else { raise self.syntax_error("for await requires of") }
       if !is_declaration {
         self.assignment_pattern(initializer)
@@ -528,14 +529,14 @@ fn Parser::for_initializer(self : Parser) -> (Int, Bool) raise ParseError {
   guard self.lexer.token != Semicolon else { return (-1, false) }
   let is_declaration = self.lexer.token == Identifier &&
     (
-      self.lexer.is_keyword("var") ||
-      self.lexer.is_keyword("let") ||
-      self.lexer.is_keyword("const")
+      self.lexer.keyword == Keyword::Var ||
+      self.lexer.keyword == Keyword::Let ||
+      self.lexer.keyword == Keyword::Const
     )
   let initializer = if is_declaration {
-    let kind = if self.lexer.is_keyword("var") {
+    let kind = if self.lexer.keyword == Keyword::Var {
       DECLARATION_VAR
-    } else if self.lexer.is_keyword("let") {
+    } else if self.lexer.keyword == Keyword::Let {
       DECLARATION_LET
     } else {
       DECLARATION_CONST
@@ -617,7 +618,7 @@ fn Parser::classic_for_tail(
 ///|
 fn Parser::declaration_head(self : Parser, kind : Int) -> Int raise ParseError {
   let declarations = self.declarators(kind)
-  let (offset, count) = self.program.edge_list(declarations)
+  let { offset, count, } = self.program.edge_list(declarations)
   self.program.node(VariableDeclaration, kind, offset, count, 0)
 }
 
@@ -625,13 +626,13 @@ fn Parser::declaration_head(self : Parser, kind : Int) -> Int raise ParseError {
 fn Parser::declarators(
   self : Parser,
   kind : Int,
-) -> Array[Int] raise ParseError {
+) -> PendingEdges raise ParseError {
   let scope_id = if kind == DECLARATION_VAR {
     self.nearest_var_scope()
   } else {
     self.scope
   }
-  let declarations : Array[Int] = []
+  let declarations = self.begin_edges()
   while true {
     let pattern = self.pattern(scope_id, false)
     let initializer = if self.lexer.token == Assignment {
@@ -685,7 +686,7 @@ fn Parser::jump(self : Parser, is_break : Bool) -> Int raise ParseError {
     (-1, -1, -1)
   }
   self.eat_semicolon()
-  let kind = if is_break { Break } else { Continue }
+  let kind : NodeKind = if is_break { Break } else { Continue }
   self.program.node(kind, label_start, label_end, label_name, 0)
 }
 
@@ -718,35 +719,37 @@ fn Parser::parse_switch(self : Parser) -> Int raise ParseError {
   self.expect(LeftBrace)
   let outer_scope = self.scope
   self.scope = self.program.push_scope(outer_scope, scope_block)
-  let cases : Array[Int] = []
+  let cases = self.begin_edges()
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
     cases.push(self.switch_case())
   }
   self.scope = outer_scope
   self.expect(RightBrace)
-  let (cases_offset, cases_count) = self.program.edge_list(cases)
+  let { offset: cases_offset, count: cases_count, } = self.program.edge_list(
+    cases,
+  )
   self.program.node(Switch, discriminant, cases_offset, cases_count, 0)
 }
 
 ///|
 fn Parser::switch_case(self : Parser) -> Int raise ParseError {
   let condition = match self.lexer.token {
-    Identifier if self.lexer.is_keyword("case") => {
+    Identifier if self.lexer.keyword == Keyword::Case => {
       self.advance()
       self.expression()
     }
-    Identifier if self.lexer.is_keyword("default") => {
+    Identifier if self.lexer.keyword == Keyword::Default => {
       self.advance()
       -1
     }
     _ => raise self.unexpected("case or default")
   }
   self.expect(Colon)
-  let statements : Array[Int] = []
+  let statements = self.begin_edges()
   while !self.at_switch_case_end() {
     statements.push(self.statement())
   }
-  let (offset, count) = self.program.edge_list(statements)
+  let { offset, count, } = self.program.edge_list(statements)
   self.program.node(SwitchCase, condition, offset, count, 0)
 }
 
@@ -756,7 +759,10 @@ fn Parser::at_switch_case_end(self : Parser) -> Bool {
   self.lexer.token == EndOfFile ||
   (
     self.lexer.token == Identifier &&
-    (self.lexer.is_keyword("case") || self.lexer.is_keyword("default"))
+    (
+      self.lexer.keyword == Keyword::Case ||
+      self.lexer.keyword == Keyword::Default
+    )
   )
 }
 
@@ -764,13 +770,13 @@ fn Parser::at_switch_case_end(self : Parser) -> Bool {
 fn Parser::parse_try(self : Parser) -> Int raise ParseError {
   let block = self.block()
   let handler = if self.lexer.token == Identifier &&
-    self.lexer.is_keyword("catch") {
+    self.lexer.keyword == Keyword::Catch {
     self.catch_clause()
   } else {
     -1
   }
   let finalizer = if self.lexer.token == Identifier &&
-    self.lexer.is_keyword("finally") {
+    self.lexer.keyword == Keyword::Finally {
     self.advance()
     self.block()
   } else {
@@ -861,7 +867,7 @@ fn Parser::function_tail(
   let body = self.function_body()
   self.scope = outer_scope
   self.in_generator = saved_generator
-  let (offset, count) = self.program.edge_list(parameters)
+  let { offset, count, } = self.program.edge_list(parameters)
   self.program.functions.push({
     name: name_reference,
     parameters_offset: offset,
@@ -897,9 +903,9 @@ fn Parser::function_name_scope(
 fn Parser::function_parameters(
   self : Parser,
   function_scope : Int,
-) -> Array[Int] raise ParseError {
+) -> PendingEdges raise ParseError {
   self.expect(LeftParenthesis)
-  let parameters : Array[Int] = []
+  let parameters = self.begin_edges()
   while self.lexer.token != RightParenthesis && self.lexer.token != EndOfFile {
     if self.lexer.token == Ellipsis {
       self.advance()
@@ -934,7 +940,7 @@ fn Parser::class_name_reference(
   is_declaration : Bool,
 ) -> Int raise ParseError {
   let has_name = self.lexer.token == Identifier &&
-    !self.lexer.is_keyword("extends")
+    self.lexer.keyword != Keyword::Extends
   guard has_name else { return -1 }
   let name_start = self.lexer.start
   let name_end = self.lexer.end
@@ -972,7 +978,7 @@ fn Parser::enter_class_scope(
 ///|
 fn Parser::class_superclass(self : Parser) -> Int raise ParseError {
   let has_extends = self.lexer.token == Identifier &&
-    self.lexer.is_keyword("extends")
+    self.lexer.keyword == Keyword::Extends
   guard has_extends else { return -1 }
   self.advance()
   self.postfix()
@@ -980,9 +986,9 @@ fn Parser::class_superclass(self : Parser) -> Int raise ParseError {
 
 ///|
 /// Leave the closing brace unread so the caller restores the outer scope first.
-fn Parser::class_body_members(self : Parser) -> Array[Int] raise ParseError {
+fn Parser::class_body_members(self : Parser) -> PendingEdges raise ParseError {
   self.expect(LeftBrace)
-  let members : Array[Int] = []
+  let members = self.begin_edges()
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
     if self.eat(Semicolon) {
       continue
@@ -997,10 +1003,10 @@ fn Parser::finish_class(
   self : Parser,
   name_reference : Int,
   superclass : Int,
-  members : Array[Int],
+  members : PendingEdges,
   is_declaration : Bool,
 ) -> Int {
-  let (offset, count) = self.program.edge_list(members)
+  let { offset, count, } = self.program.edge_list(members)
   self.program.classes.push({
     name: name_reference,
     superclass,
@@ -1033,17 +1039,18 @@ fn Parser::expression(self : Parser) -> Int raise ParseError {
   if self.lexer.token != Comma {
     return first_expression
   }
-  let items : Array[Int] = [first_expression]
+  let items = self.begin_edges()
+  items.push(first_expression)
   while self.eat(Comma) {
     items.push(self.assignment())
   }
-  let (offset, count) = self.program.edge_list(items)
+  let { offset, count, } = self.program.edge_list(items)
   self.program.node(Sequence, offset, count, 0, 0)
 }
 
 ///|
 fn Parser::assignment(self : Parser) -> Int raise ParseError {
-  guard !(self.in_generator && self.lexer.is_keyword("yield")) else {
+  guard !(self.in_generator && self.lexer.keyword == Keyword::Yield) else {
     return self.yield_expression()
   }
   let left = self.conditional()
@@ -1163,9 +1170,9 @@ fn Parser::binary_operator(self : Parser) -> (Int, Operator) {
     LogicalAnd => (2, Operator::LogicalAnd)
     NullishCoalescing => (1, Operator::NullishCoalescing)
     LogicalOr => (1, Operator::LogicalOr)
-    Identifier if self.allow_in && self.lexer.is_keyword("in") =>
+    Identifier if self.allow_in && self.lexer.keyword == Keyword::In =>
       (7, Operator::In)
-    Identifier if self.lexer.is_keyword("instanceof") =>
+    Identifier if self.lexer.keyword == Keyword::InstanceOf =>
       (7, Operator::InstanceOf)
     _ => (-1, Operator::Add)
   }
@@ -1210,13 +1217,13 @@ fn Parser::unary(self : Parser) -> Int raise ParseError {
     Minus => self.prefix_unary(Operator::Minus)
     Increment => self.prefix_update(Operator::Increment)
     Decrement => self.prefix_update(Operator::Decrement)
-    Identifier if self.lexer.is_keyword("typeof") =>
+    Identifier if self.lexer.keyword == Keyword::TypeOf =>
       self.prefix_unary(Operator::TypeOf)
-    Identifier if self.lexer.is_keyword("void") =>
+    Identifier if self.lexer.keyword == Keyword::Void =>
       self.prefix_unary(Operator::Void)
-    Identifier if self.lexer.is_keyword("delete") =>
+    Identifier if self.lexer.keyword == Keyword::Delete =>
       self.prefix_unary(Operator::Delete)
-    Identifier if self.lexer.is_keyword("await") =>
+    Identifier if self.lexer.keyword == Keyword::Await =>
       self.prefix_unary(Operator::Await)
     _ => self.postfix()
   }
@@ -1319,7 +1326,7 @@ fn Parser::call_tail(
   callee : Int,
   is_optional : Bool,
 ) -> Int raise ParseError {
-  let (offset, count) = self.arguments()
+  let { offset, count, } = self.arguments()
   let flags = if is_optional { CHAIN_OPTIONAL } else { 0 }
   self.program.node(Call, callee, offset, count, flags)
 }
@@ -1350,9 +1357,9 @@ fn Parser::mark_direct_eval(self : Parser, expression : Int) -> Unit {
 }
 
 ///|
-fn Parser::arguments(self : Parser) -> (Int, Int) raise ParseError {
+fn Parser::arguments(self : Parser) -> EdgeRange raise ParseError {
   self.expect(LeftParenthesis)
-  let arguments : Array[Int] = []
+  let arguments = self.begin_edges()
   while self.lexer.token != RightParenthesis && self.lexer.token != EndOfFile {
     if self.lexer.token == Ellipsis {
       self.advance()
@@ -1402,40 +1409,40 @@ fn Parser::source_literal(
 
 ///|
 fn Parser::identifier(self : Parser) -> Int raise ParseError {
-  match () {
-    _ if self.lexer.is_keyword("true") => {
+  match self.lexer.keyword {
+    True => {
       self.advance()
       self.program.node(BooleanLiteral, 1, 0, 0, 0)
     }
-    _ if self.lexer.is_keyword("false") => {
+    False => {
       self.advance()
       self.program.node(BooleanLiteral, 0, 0, 0, 0)
     }
-    _ if self.lexer.is_keyword("null") => {
+    Null => {
       self.advance()
       self.program.node(NullLiteral, 0, 0, 0, 0)
     }
-    _ if self.lexer.is_keyword("this") => {
+    This => {
       self.advance()
       self.program.node(This, 0, 0, 0, 0)
     }
-    _ if self.lexer.is_keyword("super") => {
+    Super => {
       self.advance()
       self.program.node(Super, 0, 0, 0, 0)
     }
-    _ if self.lexer.is_keyword("function") => {
+    Function => {
       self.advance()
       self.function(false)
     }
-    _ if self.lexer.is_keyword("class") => {
+    Class => {
       self.advance()
       self.class(false)
     }
-    _ if self.lexer.is_keyword("new") => {
+    New => {
       self.advance()
       self.parse_new()
     }
-    _ if self.lexer.is_keyword("async") => {
+    Async => {
       guard self.async_expression() is Some(expression) else {
         return self.identifier_reference()
       }
@@ -1455,7 +1462,7 @@ fn Parser::async_expression(self : Parser) -> Int? raise ParseError {
   self.advance()
   let same_line = !self.lexer.newline_before
   match self.lexer.token {
-    Identifier if same_line && self.lexer.is_keyword("function") => {
+    Identifier if same_line && self.lexer.keyword == Keyword::Function => {
       self.advance()
       Some(self.function(false, is_async=true))
     }
@@ -1507,10 +1514,10 @@ fn Parser::parse_new(self : Parser) -> Int raise ParseError {
     )
   }
   let callee = self.member_chain()
-  let (offset, count) = if self.lexer.token == LeftParenthesis {
+  let { offset, count, } = if self.lexer.token == LeftParenthesis {
     self.arguments()
   } else {
-    (-1, 0)
+    { offset: -1, count: 0, }
   }
   self.program.node(New, callee, offset, count, 0)
 }
@@ -1552,8 +1559,9 @@ fn Parser::single_arrow(
   let (body, body_flag) = self.arrow_body()
   self.scope = outer_scope
   self.in_generator = saved_generator
-  let parameters : Array[Int] = [parameter]
-  let (offset, count) = self.program.edge_list(parameters)
+  let parameters = self.begin_edges()
+  parameters.push(parameter)
+  let { offset, count, } = self.program.edge_list(parameters)
   self.program.functions.push({
     name: name_reference,
     parameters_offset: offset,
@@ -1595,7 +1603,7 @@ fn Parser::template_literal(self : Parser) -> Int raise ParseError {
 
 ///|
 fn Parser::template(self : Parser) -> Int raise ParseError {
-  let parts : Array[Int] = []
+  let parts = self.begin_edges()
   let mut quasi_count = 0
   while true {
     quasi_count = quasi_count + 1
@@ -1616,14 +1624,14 @@ fn Parser::template(self : Parser) -> Int raise ParseError {
       break
     }
   }
-  let (offset, _count) = self.program.edge_list(parts)
+  let { offset, .. } = self.program.edge_list(parts)
   self.program.node(Template, offset, quasi_count, 0, 0)
 }
 
 ///|
 fn Parser::array_literal(self : Parser) -> Int raise ParseError {
   self.expect(LeftBracket)
-  let items : Array[Int] = []
+  let items = self.begin_edges()
   let mut trailing_comma = false
   while self.lexer.token != RightBracket && self.lexer.token != EndOfFile {
     if self.lexer.token == Comma {
@@ -1644,7 +1652,7 @@ fn Parser::array_literal(self : Parser) -> Int raise ParseError {
     trailing_comma = self.lexer.token == RightBracket
   }
   self.expect(RightBracket)
-  let (offset, count) = self.program.edge_list(items)
+  let { offset, count, } = self.program.edge_list(items)
   self.program.node(
     ArrayLiteral,
     offset,
@@ -1661,7 +1669,7 @@ fn Parser::array_literal(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::object_literal(self : Parser) -> Int raise ParseError {
   self.expect(LeftBrace)
-  let properties : Array[Int] = []
+  let properties = self.begin_edges()
   let mut trailing_comma = false
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
     properties.push(self.object_property())
@@ -1671,7 +1679,7 @@ fn Parser::object_literal(self : Parser) -> Int raise ParseError {
     trailing_comma = self.lexer.token == RightBrace
   }
   self.expect(RightBrace)
-  let (offset, count) = self.program.edge_list(properties)
+  let { offset, count, } = self.program.edge_list(properties)
   self.program.node(
     ObjectLiteral,
     offset,
@@ -1694,7 +1702,7 @@ fn Parser::object_property(self : Parser) -> Int raise ParseError {
   }
   let kind = self.object_method_kind()
   let is_async = self.lexer.token == Identifier &&
-    self.lexer.is_keyword("async") &&
+    self.lexer.keyword == Keyword::Async &&
     self.property_modifier_follows()
   if is_async {
     self.advance()
@@ -1728,10 +1736,10 @@ fn Parser::property_modifier_follows(self : Parser) -> Bool raise ParseError {
 ///|
 fn Parser::object_method_kind(self : Parser) -> Int raise ParseError {
   let is_accessor = self.lexer.token == Identifier &&
-    (self.lexer.is_keyword("get") || self.lexer.is_keyword("set")) &&
+    (self.lexer.keyword == Keyword::Get || self.lexer.keyword == Keyword::Set) &&
     self.property_modifier_follows()
   guard is_accessor else { return METHOD_ORDINARY }
-  let kind = if self.lexer.is_keyword("get") {
+  let kind = if self.lexer.keyword == Keyword::Get {
     METHOD_GETTER
   } else {
     METHOD_SETTER
@@ -1776,7 +1784,7 @@ fn Parser::function_body(self : Parser) -> Int raise ParseError {
   self.expect(RightBrace)
   self.scope = parameters
   self.allow_in = saved_allow_in
-  let (offset, count) = self.program.edge_list(statements)
+  let { offset, count, } = self.program.edge_list(statements)
   self.program.node(Block, offset, count, 0, 0)
 }
 

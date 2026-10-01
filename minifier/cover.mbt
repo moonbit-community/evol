@@ -1,7 +1,7 @@
 ///|
 #valtype
 priv struct Parenthesized {
-  items : Array[Int]
+  items : PendingEdges
   outer_scope : Int
   parameter_scope : Int
   trailing_comma : Bool
@@ -17,7 +17,7 @@ fn Parser::parenthesized(self : Parser) -> Parenthesized raise ParseError {
   )
   self.scope = parameter_scope
   self.expect(LeftParenthesis)
-  let items : Array[Int] = []
+  let items = self.begin_edges()
   let mut trailing_comma = false
   while self.lexer.token != RightParenthesis {
     let item = if self.eat(Ellipsis) {
@@ -61,7 +61,7 @@ fn Parser::finish_arrow(
   let (body, body_flag) = self.arrow_body()
   self.in_generator = saved_generator
   self.scope = parameters.outer_scope
-  let (offset, count) = self.program.edge_list(parameters.items)
+  let { offset, count, } = self.program.edge_list(parameters.items)
   let index = self.program.functions.length()
   self.program.functions.push({
     name: -1,
@@ -82,15 +82,17 @@ fn Parser::finish_parenthesized(
   guard !expression.trailing_comma && expression.items.length() > 0 else {
     raise self.syntax_error("invalid parenthesized expression")
   }
-  for item in expression.items {
+  for item in expression.items.view() {
     guard self.program.nodes[item].kind != Spread else {
       raise self.syntax_error("spread requires a parameter or argument list")
     }
   }
   let inner = if expression.items.length() == 1 {
-    expression.items[0]
+    let inner = expression.items[0]
+    expression.items.release()
+    inner
   } else {
-    let (offset, count) = self.program.edge_list(expression.items)
+    let { offset, count, } = self.program.edge_list(expression.items)
     self.program.node(Sequence, offset, count, 0, 0)
   }
   self.program.node(Parenthesized, inner, 0, 0, 0)
@@ -109,7 +111,7 @@ fn Parser::async_parentheses(
   self.collapse_parenthesized_scope(expression)
   let reference = self.add_reference(self.scope, name_start, name_end)
   let callee = self.program.node(Identifier, reference, 0, 0, 0)
-  let (offset, count) = self.program.edge_list(expression.items)
+  let { offset, count, } = self.program.edge_list(expression.items)
   self.program.node(Call, callee, offset, count, 0)
 }
 

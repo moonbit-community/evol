@@ -18,16 +18,12 @@ priv struct ClassKey {
 ///|
 fn Parser::class_key(self : Parser) -> ClassKey raise ParseError {
   let computed = self.lexer.token == LeftBracket
-  let prefix = if self.lexer.is_keyword("static") {
-    Static
-  } else if self.lexer.is_keyword("get") {
-    Getter
-  } else if self.lexer.is_keyword("set") {
-    Setter
-  } else if self.lexer.is_keyword("async") {
-    Async
-  } else {
-    Plain
+  let prefix : ClassPrefix = match self.lexer.keyword {
+    Static => ClassPrefix::Static
+    Get => Getter
+    Set => Setter
+    Async => ClassPrefix::Async
+    _ => Plain
   }
   let node = self.property_key()
   { node, computed, prefix, }
@@ -57,7 +53,7 @@ fn Parser::class_method(
 /// probe. Only async requires the following key to be on the same line.
 fn Parser::class_member(
   self : Parser,
-  members : Array[Int],
+  members : PendingEdges,
 ) -> Unit raise ParseError {
   let is_generator = self.eat(Asterisk)
   let key = self.class_key()
