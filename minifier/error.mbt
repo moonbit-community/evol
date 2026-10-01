@@ -28,26 +28,18 @@ pub suberror ParseError {
 fn position_at(source : String, offset : Int) -> Position {
   let length = source.length()
   let limit = if offset < length { offset } else { length }
-  let mut line = 1
-  let mut column = 1
-  let mut index = 0
-  while index < limit {
-    let c = source[index]
-    if c == '\r' {
-      if index + 1 < limit && source[index + 1] == '\n' {
-        index = index + 1
-      }
-      line = line + 1
-      column = 1
-    } else if c == '\n' || c == 0x2028 || c == 0x2029 {
-      line = line + 1
-      column = 1
-    } else {
-      column = column + 1
+  for index = 0, line = 1, column = 1 {
+    guard index < limit else { break { line, column, } }
+    let character = source[index]
+    guard is_line_terminator(character) else {
+      continue index + 1, line, column + 1
     }
-    index = index + 1
+    let is_crlf = character == '\r' &&
+      index + 1 < limit &&
+      source[index + 1] == '\n'
+    let next = index + (if is_crlf { 2 } else { 1 })
+    continue next, line + 1, 1
   }
-  { line, column, }
 }
 
 ///|

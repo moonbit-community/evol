@@ -1,9 +1,15 @@
 ///|
-fn short_name(n : Int, alphabet : NameAlphabet) -> String {
+fn short_name(ordinal : Int, alphabet : NameAlphabet) -> String {
   let builder = StringBuilder()
-  builder.write_char(alphabet.first.get_char(n % 54).unwrap())
-  for remaining = n / 54; remaining > 0; remaining = (remaining - 1) / 64 {
-    builder.write_char(alphabet.rest.get_char((remaining - 1) % 64).unwrap())
+  let first_radix = alphabet.first.length()
+  let rest_radix = alphabet.rest.length()
+  builder.write_char(alphabet.first.get_char(ordinal % first_radix).unwrap())
+  for remaining = ordinal / first_radix
+      remaining > 0
+      remaining = (remaining - 1) / rest_radix {
+    builder.write_char(
+      alphabet.rest.get_char((remaining - 1) % rest_radix).unwrap(),
+    )
   }
   builder.to_string()
 }
@@ -27,68 +33,100 @@ fn symbol_name(program : Program, symbol : Int) -> String {
 ///|
 fn mangle(program : Program, rename_top_level : Bool) -> Unit {
   guard !program.has_dynamic_scope else { return }
+  let reserved = program.reserve_symbol_names(rename_top_level)
+  program.alphabet = name_alphabet(program)
+  let declarations = program.renameable_declarations()
+  let captured = program.captured_symbols()
+  program.assign_symbol_names(reserved, declarations, captured)
+}
+
+///|
+fn Program::reserve_symbol_names(
+  self : Program,
+  rename_top_level : Bool,
+) -> @hashset.HashSet[String] {
   let reserved = keywords.copy()
-  for r in program.references {
-    if r.symbol < 0 {
-      reserved.add(program.names[r.name])
+  for reference in self.references {
+    if reference.symbol < 0 {
+      reserved.add(self.names[reference.name])
     }
   }
-  for i in 0..<program.symbols.length() {
-    let s = program.symbols[i]
-    let root_index = program.symbol_root(i)
-    let root = program.symbols[root_index]
-    let flags = if (s.flags & symbol_preserved) != 0 ||
-      s.name == name_arguments ||
-      program.preserved_names.contains(s.name) ||
-      (s.scope == 0 && !rename_top_level) {
+  for index in 0..<self.symbols.length() {
+    let symbol = self.symbols[index]
+    let root_index = self.symbol_root(index)
+    let root = self.symbols[root_index]
+    let must_preserve = (symbol.flags & symbol_preserved) != 0 ||
+      symbol.name == name_arguments ||
+      self.preserved_names.contains(symbol.name) ||
+      (symbol.scope == 0 && !rename_top_level)
+    let flags = if must_preserve {
       root.flags | symbol_preserved
     } else {
       root.flags
     }
     if flags != root.flags {
-      program.symbols[root_index] = { ..root, flags, }
+      self.symbols[root_index] = { ..root, flags, }
     }
     if (flags & symbol_preserved) != 0 {
-      reserved.add(symbol_name(program, i))
+      reserved.add(symbol_name(self, index))
     }
   }
-  program.alphabet = name_alphabet(program)
-  let declarations : Array[Array[Int]] = Array::makei(program.scopes.length(), _ => {
+  reserved
+}
+
+///|
+fn Program::renameable_declarations(self : Program) -> Array[Array[Int]] {
+  let declarations : Array[Array[Int]] = Array::makei(self.scopes.length(), _ => {
     []
   })
-  for index in 0..<program.symbols.length() {
-    let symbol = program.symbols[index]
+  for index in 0..<self.symbols.length() {
+    let symbol = self.symbols[index]
     guard symbol.link < 0 && (symbol.flags & symbol_preserved) == 0 else {
       continue
     }
     declarations[symbol.scope].push(index)
   }
+  declarations
+}
+
+///|
+fn Program::captured_symbols(self : Program) -> Array[@hashset.HashSet[Int]] {
   let captured : Array[@hashset.HashSet[Int]] = Array::makei(
-    program.scopes.length(),
+    self.scopes.length(),
     _ => @hashset.HashSet([]),
   )
-  for reference in program.references {
+  for reference in self.references {
     if reference.symbol >= 0 {
-      reserve_capture(program, captured, reference.scope, reference.symbol)
+      reserve_capture(self, captured, reference.scope, reference.symbol)
     }
   }
   // Parameters copied into a function-body environment and linked catch/var
   // declarations also constrain names even when the binding is never read.
-  for scope in 0..<program.scopes.length() {
-    for _, symbol in program.scope_members[scope] {
-      reserve_capture(program, captured, scope, program.symbol_root(symbol))
+  for scope in 0..<self.scopes.length() {
+    for _, symbol in self.scope_members[scope] {
+      reserve_capture(self, captured, scope, self.symbol_root(symbol))
     }
   }
-  let candidates = program.generated_names
+  captured
+}
+
+///|
+fn Program::assign_symbol_names(
+  self : Program,
+  reserved : @hashset.HashSet[String],
+  declarations : Array[Array[Int]],
+  captured : Array[@hashset.HashSet[Int]],
+) -> Unit {
+  let candidates = self.generated_names
   let blocked : Array[Int] = []
-  let generator = NameGenerator::new(program.alphabet, reserved)
+  let generator = NameGenerator::new(self.alphabet, reserved)
   // Scope allocation is preorder; ancestors receive names before descendants.
-  for scope in 0..<program.scopes.length() {
+  for scope in 0..<self.scopes.length() {
     let targets = declarations[scope]
     guard targets.length() > 0 else { continue }
     targets.sort_by((left, right) => {
-      let frequency = program.symbols[right].use_count -
-        program.symbols[left].use_count
+      let frequency = self.symbols[right].use_count -
+        self.symbols[left].use_count
       if frequency == 0 {
         left - right
       } else {
@@ -96,7 +134,7 @@ fn mangle(program : Program, rename_top_level : Bool) -> Unit {
       }
     })
     for symbol in captured[scope] {
-      let slot = program.symbols[symbol].name_slot
+      let slot = self.symbols[symbol].name_slot
       if slot >= 0 {
         blocked[slot] = scope
       }
@@ -110,7 +148,7 @@ fn mangle(program : Program, rename_top_level : Bool) -> Unit {
         candidates.push(generator.next_name())
         blocked.push(-1)
       }
-      program.symbols[index] = { ..program.symbols[index], name_slot: slot, }
+      self.symbols[index] = { ..self.symbols[index], name_slot: slot, }
       slot += 1
     }
   }

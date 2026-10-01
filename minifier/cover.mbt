@@ -40,7 +40,7 @@ fn Parser::parenthesized(self : Parser) -> Parenthesized raise ParseError {
 fn Parser::finish_arrow(
   self : Parser,
   parameters : Parenthesized,
-  is_async : Int,
+  is_async : Bool,
 ) -> Int raise ParseError {
   guard !self.lexer.newline_before else {
     raise self.syntax_error("newline before arrow")
@@ -58,7 +58,7 @@ fn Parser::finish_arrow(
   let saved_generator = self.in_generator
   self.in_generator = false
   self.expect(Arrow)
-  let (body, expr_body) = self.arrow_body()
+  let (body, body_flag) = self.arrow_body()
   self.in_generator = saved_generator
   self.scope = parameters.outer_scope
   let (offset, count) = self.program.edge_list(parameters.items)
@@ -68,7 +68,7 @@ fn Parser::finish_arrow(
     parameters_offset: offset,
     parameters_count: count,
     body,
-    flags: FUNCTION_ARROW + is_async * FUNCTION_ASYNC + expr_body,
+    flags: FUNCTION_ARROW | function_modifier_flags(is_async, false) | body_flag,
   })
   self.program.node(ArrowExpression, index, 0, 0, 0)
 }
@@ -78,12 +78,7 @@ fn Parser::finish_parenthesized(
   self : Parser,
   expression : Parenthesized,
 ) -> Int raise ParseError {
-  let scope = self.program.scopes[expression.parameter_scope]
-  self.program.scopes[expression.parameter_scope] = {
-    ..scope,
-    kind: scope_transparent,
-  }
-  self.scope = expression.outer_scope
+  self.collapse_parenthesized_scope(expression)
   guard !expression.trailing_comma && expression.items.length() > 0 else {
     raise self.syntax_error("invalid parenthesized expression")
   }
@@ -109,14 +104,9 @@ fn Parser::async_parentheses(
 ) -> Int raise ParseError {
   let expression = self.parenthesized()
   if self.lexer.token == Arrow {
-    return self.finish_arrow(expression, 1)
+    return self.finish_arrow(expression, true)
   }
-  let scope = self.program.scopes[expression.parameter_scope]
-  self.program.scopes[expression.parameter_scope] = {
-    ..scope,
-    kind: scope_transparent,
-  }
-  self.scope = expression.outer_scope
+  self.collapse_parenthesized_scope(expression)
   let reference = self.add_reference(self.scope, name_start, name_end)
   let callee = self.program.node(Identifier, reference, 0, 0, 0)
   let (offset, count) = self.program.edge_list(expression.items)
@@ -132,77 +122,14 @@ fn Parser::cover_pattern(
 ) -> Unit raise ParseError {
   let node = self.program.nodes[id]
   let replacement = match node.kind {
-    Identifier | PatternIdentifier => {
-      let reference = self.program.references[node.a]
-      if declaring {
-        let symbol = self.program.add_symbol(
-          reference.name_start,
-          reference.name_end,
-          self.scope,
-        )
-        self.program.references[node.a] = {
-          ..reference,
-          scope: self.scope,
-          symbol,
-        }
-      }
-      Node::new(
-        if declaring {
-          PatternIdentifier
-        } else {
-          Identifier
-        },
-        node.a,
-        0,
-        0,
-        0,
-      )
-    }
-    ArrayLiteral | ObjectLiteral | PatternArray | PatternObject => {
-      for index in 0..<node.b {
-        let item = self.program.edges[node.a + index]
-        if item >= 0 {
-          let element = self.program.nodes[item]
-          if element.kind == Spread || element.kind == PatternRest {
-            guard index == node.b - 1 && node.d == 0 else {
-              raise self.syntax_error(
-                "rest binding must be last without a trailing comma",
-              )
-            }
-            if (node.kind == ObjectLiteral || node.kind == PatternObject) &&
-              declaring {
-              let target = self.program.nodes[element.a].kind
-              guard target == Identifier || target == PatternIdentifier else {
-                raise self.syntax_error(
-                  "object rest binding requires an identifier",
-                )
-              }
-            }
-          }
-          self.cover_pattern(item, declaring)
-        }
-      }
-      let kind = if node.kind == ArrayLiteral || node.kind == PatternArray {
-        PatternArray
-      } else {
-        PatternObject
-      }
-      Node::new(kind, node.a, node.b, 0, 0)
-    }
+    Identifier | PatternIdentifier => self.cover_identifier(node, declaring)
+    ArrayLiteral | ObjectLiteral | PatternArray | PatternObject =>
+      self.cover_collection(node, declaring)
     Property | PatternProperty => {
       self.cover_pattern(node.b, declaring)
       Node::new(PatternProperty, node.a, node.b, node.c, node.d)
     }
-    Spread | PatternRest => {
-      let target = self.program.nodes[node.a].kind
-      guard target != Assignment &&
-        target != PatternDefault &&
-        target != CoverDefault else {
-        raise self.syntax_error("rest binding cannot have a default")
-      }
-      self.cover_pattern(node.a, declaring)
-      Node::new(PatternRest, node.a, 0, 0, 0)
-    }
+    Spread | PatternRest => self.cover_rest(node, declaring)
     Assignment => {
       guard self.program.operators[node.a] == Operator::Assignment else {
         raise self.syntax_error("invalid default binding")
@@ -224,9 +151,101 @@ fn Parser::cover_pattern(
 }
 
 ///|
+fn Parser::cover_identifier(
+  self : Parser,
+  node : Node,
+  declaring : Bool,
+) -> Node raise ParseError {
+  let reference = self.program.references[node.a]
+  if declaring {
+    let symbol = self.program.add_symbol(
+      reference.name_start,
+      reference.name_end,
+      self.scope,
+    )
+    self.program.references[node.a] = {
+      ..reference,
+      scope: self.scope,
+      symbol,
+    }
+  }
+  let kind = if declaring { PatternIdentifier } else { Identifier }
+  Node::new(kind, node.a, 0, 0, 0)
+}
+
+///|
+fn Parser::cover_collection(
+  self : Parser,
+  node : Node,
+  declaring : Bool,
+) -> Node raise ParseError {
+  let is_object = node.kind == ObjectLiteral || node.kind == PatternObject
+  for index in 0..<node.b {
+    let item = self.program.edges[node.a + index]
+    guard item >= 0 else { continue }
+    let element = self.program.nodes[item]
+    if element.kind == Spread || element.kind == PatternRest {
+      let is_last_without_comma = index == node.b - 1 && node.d == 0
+      guard is_last_without_comma else {
+        raise self.syntax_error(
+          "rest binding must be last without a trailing comma",
+        )
+      }
+      if is_object && declaring {
+        self.require_object_rest_identifier(element.a)
+      }
+    }
+    self.cover_pattern(item, declaring)
+  }
+  let kind = if is_object { PatternObject } else { PatternArray }
+  Node::new(kind, node.a, node.b, 0, 0)
+}
+
+///|
+fn Parser::require_object_rest_identifier(
+  self : Parser,
+  target : Int,
+) -> Unit raise ParseError {
+  let kind = self.program.nodes[target].kind
+  guard kind == Identifier || kind == PatternIdentifier else {
+    raise self.syntax_error("object rest binding requires an identifier")
+  }
+}
+
+///|
+fn Parser::cover_rest(
+  self : Parser,
+  node : Node,
+  declaring : Bool,
+) -> Node raise ParseError {
+  let target = self.program.nodes[node.a].kind
+  let has_default = target == Assignment ||
+    target == PatternDefault ||
+    target == CoverDefault
+  guard !has_default else {
+    raise self.syntax_error("rest binding cannot have a default")
+  }
+  self.cover_pattern(node.a, declaring)
+  Node::new(PatternRest, node.a, 0, 0, 0)
+}
+
+///|
 fn Parser::assignment_pattern(self : Parser, id : Int) -> Unit raise ParseError {
   let kind = self.program.nodes[id].kind
   if kind == ArrayLiteral || kind == ObjectLiteral {
     self.cover_pattern(id, false)
   }
+}
+
+///|
+fn Parser::collapse_parenthesized_scope(
+  self : Parser,
+  expression : Parenthesized,
+) -> Unit {
+  let scope = self.program.scopes[expression.parameter_scope]
+  self.program.scopes[expression.parameter_scope] = {
+    ..scope,
+    kind: scope_transparent,
+  }
+  self.scope = expression.outer_scope
 }

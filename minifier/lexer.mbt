@@ -1,51 +1,60 @@
 ///|
-fn is_line_terminator(c : UInt16) -> Bool {
-  c == '\n' || c == '\r' || c == 0x2028 || c == 0x2029
+fn is_line_terminator(character : UInt16) -> Bool {
+  character == '\n' ||
+  character == '\r' ||
+  character == '\u{2028}' ||
+  character == '\u{2029}'
 }
 
 ///|
-fn is_whitespace(c : UInt16) -> Bool {
-  if c < 0x80 {
-    c == ' ' || c == '\t' || c == 0x0B || c == 0x0C
+fn is_ascii_identifier_character(character : Char, first : Bool) -> Bool {
+  character.is_ascii_alphabetic() ||
+  character == '_' ||
+  character == '$' ||
+  (!first && character.is_ascii_digit())
+}
+
+///|
+fn is_escaped_identifier_character(character : Char, first : Bool) -> Bool {
+  let allowed = character.to_int() >= 0x80 ||
+    is_ascii_identifier_character(character, first)
+  allowed && !character.is_whitespace()
+}
+
+///|
+fn is_digit(character : UInt16) -> Bool {
+  character >= '0' && character <= '9'
+}
+
+///|
+fn is_hex(character : UInt16) -> Bool {
+  is_digit(character) ||
+  (character >= 'a' && character <= 'f') ||
+  (character >= 'A' && character <= 'F')
+}
+
+///|
+fn is_oct(character : UInt16) -> Bool {
+  character >= '0' && character <= '7'
+}
+
+///|
+fn hex_digit_value(character : UInt16) -> Int? {
+  guard is_hex(character) else { return None }
+  let digit = if character <= '9' {
+    character.to_int() - '0'.to_int()
+  } else if character <= 'F' {
+    character.to_int() - 'A'.to_int() + 10
   } else {
-    c == 0xFEFF ||
-    c.to_int().to_char().map_or(false, character => character.is_whitespace())
+    character.to_int() - 'a'.to_int() + 10
   }
-}
-
-///|
-fn is_identifier_start(c : UInt16) -> Bool {
-  c == '$' ||
-  c == '_' ||
-  c == '#' ||
-  (c >= 'a' && c <= 'z') ||
-  (c >= 'A' && c <= 'Z') ||
-  c >= 0x80
-}
-
-///|
-fn is_identifier_continue(c : UInt16) -> Bool {
-  is_identifier_start(c) || (c >= '0' && c <= '9')
-}
-
-///|
-fn is_digit(c : UInt16) -> Bool {
-  c >= '0' && c <= '9'
-}
-
-///|
-fn is_hex(c : UInt16) -> Bool {
-  is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
-}
-
-///|
-fn is_oct(c : UInt16) -> Bool {
-  c >= '0' && c <= '7'
+  Some(digit)
 }
 
 ///|
 priv struct Lexer {
   source : String
+  // The next unread UTF-16 code unit; token spans are [start, end).
   mut position : Int
   mut token : Token
   mut start : Int
@@ -132,21 +141,11 @@ fn Lexer::character(self : Lexer) -> UInt16 {
 
 ///|
 fn Lexer::character_at(self : Lexer, offset : Int) -> UInt16 {
-  let i = self.position + offset
-  if i < 0 || i >= self.source.length() {
+  let index = self.position + offset
+  if index < 0 || index >= self.source.length() {
     0
   } else {
-    self.source[i]
-  }
-}
-
-///|
-fn Lexer::peek(self : Lexer, offset : Int) -> Int {
-  let i = self.position + offset
-  if i < 0 || i >= self.source.length() {
-    -1
-  } else {
-    self.source[i].to_int()
+    self.source[index]
   }
 }
 
@@ -159,267 +158,99 @@ fn Lexer::is_keyword(self : Lexer, keyword : String) -> Bool {
 }
 
 ///|
+const LINE_TERMINATORS : Regex = re"[\n\r\u2028\u2029]+"
+
+///|
+// Keep the existing whitespace set; line terminators are tracked separately.
+const TOKEN_WHITESPACE : Regex = re"[ \t\v\f\u0085\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF]+"
+
+///|
+const DECIMAL_MANTISSA : Regex = re"[0-9][0-9_]*(?:\.[0-9_]*)?" |
+  re"\.[0-9][0-9_]*"
+
+///|
+// Preserve the existing permissive spellings, including incomplete exponents.
+const NUMBER_SPELLING : Regex = re"0[xX][0-9a-fA-F_]*n?" |
+  re"0[bB][01_]*n?" |
+  re"0[oO][0-7_]*n?" |
+  (DECIMAL_MANTISSA + re"(?:[eE][+\-]?[0-9_]*)?n?")
+
+///|
 fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
-  let length = self.source.length()
-  if self.position == 0 &&
-    length >= 2 &&
-    self.source[0] == '#' &&
-    self.source[1] == '!' {
-    while self.position < length && !is_line_terminator(self.character()) {
-      self.position = self.position + 1
+  while true {
+    lexmatch self.source.view(start_offset=self.position) with longest {
+      (re"^" + LINE_TERMINATORS, after=rest) => {
+        self.newline_before = true
+        self.position = rest.start_offset()
+      }
+      (re"^" + TOKEN_WHITESPACE, after=rest) =>
+        self.position = rest.start_offset()
+      (re"^//[^\n\r\u2028\u2029]*", after=rest) => {
+        self.position = rest.start_offset()
+        self.line_comment_tail()
+      }
+      (re"^#![^\n\r\u2028\u2029]*", after=rest) => {
+        guard self.position == 0 else { return }
+        self.position = rest.start_offset()
+        self.line_comment_tail()
+      }
+      (re"^/\*", after=rest) => {
+        let comment_start = self.position
+        self.position = rest.start_offset()
+        self.block_comment_tail(comment_start)
+      }
+      _ => return
     }
   }
-  while self.position < length {
-    let c = self.character()
-    if is_line_terminator(c) {
-      self.newline_before = true
-      self.position = self.position + 1
-      continue
+}
+
+///|
+// Only ill-formed UTF-16 can interrupt the regex before the end of a line.
+fn Lexer::line_comment_tail(self : Lexer) -> Unit {
+  while self.position < self.source.length() &&
+        is_surrogate_code_unit(self.character()) {
+    self.position += 1
+    lexmatch self.source.view(start_offset=self.position) {
+      (re"^[^\n\r\u2028\u2029]*", after=rest) =>
+        self.position = rest.start_offset()
     }
-    if is_whitespace(c) {
-      self.position = self.position + 1
-      continue
-    }
-    if c == '/' {
-      let d = self.peek(1)
-      if d == 47 {
-        self.position = self.position + 2
-        while self.position < length && !is_line_terminator(self.character()) {
-          self.position = self.position + 1
-        }
-        continue
+  }
+}
+
+///|
+fn Lexer::block_comment_tail(
+  self : Lexer,
+  comment_start : Int,
+) -> Unit raise ParseError {
+  while true {
+    lexmatch self.source.view(start_offset=self.position) with longest {
+      (re"^\*+/", after=rest) => {
+        self.position = rest.start_offset()
+        return
       }
-      if d == 42 {
-        let comment_start = self.position
-        self.position = self.position + 2
-        let mut closed = false
-        while self.position < length {
-          if self.source[self.position] == '*' && self.peek(1) == 47 {
-            self.position = self.position + 2
-            closed = true
-            break
-          }
-          if is_line_terminator(self.character()) {
-            self.newline_before = true
-          }
-          self.position = self.position + 1
-        }
-        guard closed else {
+      (re"^" + LINE_TERMINATORS, after=rest) => {
+        self.newline_before = true
+        self.position = rest.start_offset()
+      }
+      (re"^[^*\n\r\u2028\u2029]+", after=rest) =>
+        self.position = rest.start_offset()
+      (re"^\*+", after=rest) => self.position = rest.start_offset()
+      _ => {
+        guard self.position < self.source.length() &&
+          is_surrogate_code_unit(self.character()) else {
           raise Unterminated(position_at(self.source, comment_start), "comment")
         }
-        continue
-      }
-    }
-    break
-  }
-}
-
-///|
-fn Lexer::identifier(self : Lexer) -> Unit raise ParseError {
-  if self.character() == '#' {
-    self.position += 1
-  }
-  let mut first = true
-  while self.position < self.source.length() {
-    if self.character() == '\\' {
-      let (character, end) = identifier_escape(self.source, self.position)
-      let code = character.to_int()
-      let valid = code >= 0x80 ||
-        code == 36 ||
-        code == 95 ||
-        (code >= 65 && code <= 90) ||
-        (code >= 97 && code <= 122) ||
-        (!first && code >= 48 && code <= 57)
-      guard valid && !character.is_whitespace() else {
-        raise self.invalid_escape("invalid identifier escape")
-      }
-      self.position = end
-    } else if is_identifier_continue(self.character()) &&
-      !is_whitespace(self.character()) &&
-      !is_line_terminator(self.character()) {
-      self.position += 1
-    } else {
-      break
-    }
-    first = false
-  }
-  guard !first else { raise self.syntax_error("identifier expected") }
-  self.token = Identifier
-  self.end = self.position
-}
-
-///|
-fn Lexer::digits(self : Lexer, is_valid : (UInt16) -> Bool) -> Unit {
-  let length = self.source.length()
-  while self.position < length {
-    let c = self.character()
-    if is_valid(c) || c == '_' {
-      self.position = self.position + 1
-    } else {
-      break
-    }
-  }
-}
-
-///|
-fn Lexer::number(self : Lexer) -> Unit {
-  let c = self.character()
-  if c == '0' {
-    let d = self.character_at(1)
-    if d == 'x' || d == 'X' {
-      self.position = self.position + 2
-      self.digits(is_hex)
-      self.finish_number()
-      return
-    }
-    if d == 'b' || d == 'B' {
-      self.position = self.position + 2
-      self.digits(x => x == '0' || x == '1')
-      self.finish_number()
-      return
-    }
-    if d == 'o' || d == 'O' {
-      self.position = self.position + 2
-      self.digits(is_oct)
-      self.finish_number()
-      return
-    }
-  }
-  self.digits(is_digit)
-  if self.character() == '.' {
-    self.position = self.position + 1
-    self.digits(is_digit)
-  }
-  let e = self.character()
-  if e == 'e' || e == 'E' {
-    self.position = self.position + 1
-    let s = self.character()
-    if s == '+' || s == '-' {
-      self.position = self.position + 1
-    }
-    self.digits(is_digit)
-  }
-  self.finish_number()
-}
-
-///|
-fn Lexer::finish_number(self : Lexer) -> Unit {
-  if self.character() == 'n' {
-    self.position = self.position + 1
-  }
-  self.token = Number
-  self.end = self.position
-}
-
-///|
-fn Lexer::string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
-  self.position += 1
-  while self.position < self.source.length() {
-    let c = self.character()
-    if c == quote {
-      self.position += 1
-      self.token = StringLiteral
-      self.end = self.position
-      return
-    }
-    guard c != '\n' && c != '\r' else {
-      raise self.syntax_error("newline in string literal")
-    }
-    if c == '\\' {
-      guard self.position + 1 < self.source.length() else {
-        raise self.unterminated("string escape")
-      }
-      self.position += 2
-      if self.source[self.position - 1] == '\r' && self.character() == '\n' {
         self.position += 1
       }
-    } else {
-      self.position += 1
     }
   }
-  raise self.unterminated("string literal")
 }
 
 ///|
-fn Lexer::regex(self : Lexer) -> Unit raise ParseError {
-  self.position += 1
-  let mut in_class = false
-  while self.position < self.source.length() {
-    let c = self.character()
-    guard !is_line_terminator(c) else {
-      raise self.syntax_error("newline in regular expression")
-    }
-    if c == '\\' {
-      guard self.position + 1 < self.source.length() &&
-        !is_line_terminator(self.character_at(1)) else {
-        raise self.unterminated("regular expression escape")
-      }
-      self.position += 2
-      continue
-    }
-    if c == '/' && !in_class {
-      self.position += 1
-      while is_identifier_continue(self.character()) &&
-            !is_whitespace(self.character()) &&
-            !is_line_terminator(self.character()) {
-        self.position += 1
-      }
-      self.token = Regex
-      self.end = self.position
-      return
-    }
-    if c == '[' {
-      in_class = true
-    }
-    if c == ']' {
-      in_class = false
-    }
-    self.position += 1
-  }
-  raise self.unterminated("regular expression")
-}
-
-///|
-fn Lexer::template_chunk(
-  self : Lexer,
-  is_start : Bool,
-) -> Unit raise ParseError {
-  let length = self.source.length()
-  let begin = self.position
-  while self.position < length {
-    let c = self.source[self.position]
-    if c == '\\' {
-      guard self.position + 1 < length else {
-        raise self.unterminated("template escape")
-      }
-      self.position += 2
-      continue
-    }
-    if c == '`' {
-      self.quasi_start = begin
-      self.quasi_end = self.position
-      self.position = self.position + 1
-      self.token = if is_start { TemplateNoSubstitution } else { TemplateTail }
-      self.end = self.position
-      return
-    }
-    if c == '$' && self.peek(1) == 123 {
-      self.quasi_start = begin
-      self.quasi_end = self.position
-      self.position = self.position + 2
-      self.token = if is_start { TemplateHead } else { TemplateMiddle }
-      self.end = self.position
-      return
-    }
-    self.position = self.position + 1
-  }
-  raise self.unterminated("template literal")
-}
-
-///|
-fn Lexer::resume_template(self : Lexer) -> Unit raise ParseError {
-  self.start = self.position
-  self.template_chunk(false)
+fn Lexer::finish_token(self : Lexer, token : Token, rest : StringView) -> Unit {
+  self.token = token
+  self.position = rest.start_offset()
+  self.end = self.position
 }
 
 ///|
@@ -427,35 +258,22 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
   self.newline_before = false
   self.skip_trivia()
   self.start = self.position
-  let length = self.source.length()
-  if self.position >= length {
-    self.token = EndOfFile
-    self.end = self.position
-    return
+  lexmatch self.source.view(start_offset=self.position) with longest {
+    (re"^" + NUMBER_SPELLING, after=rest) => self.finish_token(Number, rest)
+    (re"^(?:[A-Za-z_$#\\]|[^\u0000-\u007F])", after=_) => self.identifier()
+    (re"^['\"]", after=_) => self.string(self.character())
+    (re"^`", after=rest) => {
+      self.position = rest.start_offset()
+      self.template_chunk(true)
+    }
+    (re"^$", after=rest) => self.finish_token(EndOfFile, rest)
+    _ =>
+      if is_surrogate_code_unit(self.character()) {
+        self.identifier()
+      } else {
+        self.punctuation()
+      }
   }
-  let c = self.character()
-  if is_identifier_start(c) || c == '\\' {
-    self.identifier()
-    return
-  }
-  if is_digit(c) {
-    self.number()
-    return
-  }
-  if c == '.' && is_digit(self.character_at(1)) {
-    self.number()
-    return
-  }
-  if c == '\'' || c == '"' {
-    self.string(c)
-    return
-  }
-  if c == '`' {
-    self.position = self.position + 1
-    self.template_chunk(true)
-    return
-  }
-  self.punctuation()
 }
 
 ///|
@@ -531,78 +349,5 @@ fn Lexer::punctuation(self : Lexer) -> Unit raise ParseError {
         self.character().to_int().to_char().unwrap_or('?'),
       )
   }
-  self.token = token
-  self.position = self.source.length() - rest.length()
-  self.end = self.position
-}
-
-///|
-fn identifier_escape(
-  source : String,
-  start : Int,
-) -> (Char, Int) raise ParseError {
-  guard start + 2 < source.length() && source[start + 1] == 'u' else {
-    raise InvalidEscape(
-      position_at(source, start),
-      "expected Unicode identifier escape",
-    )
-  }
-  let braced = source[start + 2] == '{'
-  let begin = start + (if braced { 3 } else { 2 })
-  let (value, end) = for value = 0, position = begin {
-    if braced && position < source.length() && source[position] == '}' {
-      guard position > begin else {
-        raise InvalidEscape(
-          position_at(source, position),
-          "empty Unicode escape",
-        )
-      }
-      break (value, position + 1)
-    }
-    if !braced && position == begin + 4 {
-      break (value, position)
-    }
-    guard position < source.length() &&
-      is_hex(source[position]) &&
-      value <= 0x10FFFF / 16 else {
-      raise InvalidEscape(
-        position_at(source, position),
-        "invalid Unicode escape",
-      )
-    }
-    let c = source[position].to_int()
-    let digit = if c <= 57 { c - 48 } else if c <= 70 { c - 55 } else { c - 87 }
-    continue value * 16 + digit, position + 1
-  }
-  guard value.to_char() is Some(character) else {
-    raise InvalidEscape(
-      position_at(source, start),
-      "invalid Unicode code point",
-    )
-  }
-  (character, end)
-}
-
-///|
-fn identifier_name(
-  source : String,
-  start : Int,
-  end : Int,
-) -> String raise ParseError {
-  let output = StringBuilder()
-  let mut position = start
-  while position < end {
-    if source[position] == '\\' {
-      let (character, next) = identifier_escape(source, position)
-      output.write_char(character)
-      position = next
-    } else {
-      let begin = position
-      while position < end && source[position] != '\\' {
-        position += 1
-      }
-      output.write_substring(source, begin, position - begin)
-    }
-  }
-  output.to_string()
+  self.finish_token(token, rest)
 }

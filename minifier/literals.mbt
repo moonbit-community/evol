@@ -1,90 +1,163 @@
 ///|
-/// Only rewrite decimal spellings whose numeric value is unchanged exactly.
-fn Printer::number(self : Printer, start : Int, end : Int) -> Unit {
-  let source = self.program.source
-  let (exponent, integral) = for index = start, integral = true {
-    guard index < end else { break (end, integral) }
-    let c = source[index]
-    if c == 'e' || c == 'E' {
-      break (index, integral)
+priv struct DecimalSpelling {
+  mantissa_start : Int
+  exponent_marker : Int
+  is_integer : Bool
+}
+
+///|
+fn decimal_spelling(
+  source : String,
+  start : Int,
+  end : Int,
+) -> DecimalSpelling? {
+  let (exponent_marker, is_integer) = for index = start, is_integer = true {
+    guard index < end else { break (end, is_integer) }
+    let character = source[index]
+    if character == 'e' || character == 'E' {
+      break (index, is_integer)
     }
-    guard is_digit(c) || c == '.' else { break (-1, false) }
-    continue index + 1, integral && c != '.'
+    guard is_digit(character) || character == '.' else { return None }
+    continue index + 1, is_integer && character != '.'
   }
-  guard exponent >= 0 else {
-    self.span(start, end, true)
-    return
-  }
-  let mantissa = if start + 2 < exponent &&
+  let can_omit_leading_zero = start + 2 < exponent_marker &&
     source[start] == '0' &&
-    source[start + 1] == '.' {
-    start + 1
-  } else {
-    start
+    source[start + 1] == '.'
+  Some({
+    mantissa_start: if can_omit_leading_zero {
+      start + 1
+    } else {
+      start
+    },
+    exponent_marker,
+    is_integer,
+  })
+}
+
+///|
+fn integer_exponent_spelling(
+  source : String,
+  start : Int,
+  end : Int,
+) -> String? {
+  // Leading-zero integers may be legacy octal.
+  guard source[start] != '0' else { return None }
+  let significant_end = for index = end {
+    guard index > start + 1 && source[index - 1] == '0' else { break index }
+    continue index - 1
   }
-  if exponent == end {
-    // Leading-zero integers may be legacy octal. BigInt and other bases were
-    // excluded by the decimal scan above.
-    if integral && source[start] != '0' {
-      let digits_end = for index = end {
-        guard index > start + 1 && source[index - 1] == '0' else { break index }
-        continue index - 1
-      }
-      let zeros = end - digits_end
-      if zeros > 0 {
-        let power = zeros.to_string()
-        if digits_end - start + 1 + power.length() < end - start {
-          let text = StringBuilder()
-          text.write_substring(source, start, digits_end - start)
-          text.write_string("e")
-          text.write_string(power)
-          self.text(text.to_string(), true)
-          return
-        }
-      }
-    }
-    self.span(mantissa, end, true)
-    return
+  let trailing_zeros = end - significant_end
+  guard trailing_zeros > 0 else { return None }
+  let exponent = trailing_zeros.to_string()
+  let shortened_length = significant_end - start + 1 + exponent.length()
+  guard shortened_length < end - start else { return None }
+  let text = StringBuilder()
+  text.write_substring(source, start, significant_end - start)
+  text.write_string("e")
+  text.write_string(exponent)
+  Some(text.to_string())
+}
+
+///|
+fn shortened_exponent_spelling(
+  source : String,
+  start : Int,
+  end : Int,
+  decimal : DecimalSpelling,
+) -> String? {
+  let marker = decimal.exponent_marker
+  guard marker + 1 < end else { return None }
+  let sign = source[marker + 1]
+  let digits_start = marker + (if sign == '+' || sign == '-' { 2 } else { 1 })
+  guard digits_start < end else { return None }
+  for index in digits_start..<end {
+    guard is_digit(source[index]) else { return None }
   }
-  guard exponent + 1 < end else {
-    self.span(start, end, true)
-    return
-  }
-  let sign = source[exponent + 1]
-  let digits = exponent + (if sign == '+' || sign == '-' { 2 } else { 1 })
-  let valid = for index = digits {
-    guard index < end else { break index > digits }
-    guard is_digit(source[index]) else { break false }
-    continue index + 1
-  }
-  guard valid else {
-    self.span(start, end, true)
-    return
-  }
-  let significant = for index = digits {
+  let significant_start = for index = digits_start {
     guard index < end - 1 && source[index] == '0' else { break index }
     continue index + 1
   }
-  let negative = sign == '-' &&
-    !(significant == end - 1 && source[significant] == '0')
-  let length = exponent -
-    mantissa +
-    1 +
-    (if negative { 1 } else { 0 }) +
-    end -
-    significant
-  guard length < end - start else {
+  let exponent_is_zero = significant_start == end - 1 &&
+    source[significant_start] == '0'
+  let needs_minus = sign == '-' && !exponent_is_zero
+  let mantissa_length = marker - decimal.mantissa_start
+  let exponent_length = end -
+    significant_start +
+    (if needs_minus { 1 } else { 0 })
+  guard mantissa_length + 1 + exponent_length < end - start else { return None }
+  let text = StringBuilder()
+  text.write_substring(source, decimal.mantissa_start, mantissa_length)
+  text.write_string("e")
+  if needs_minus {
+    text.write_string("-")
+  }
+  text.write_substring(source, significant_start, end - significant_start)
+  Some(text.to_string())
+}
+
+///|
+/// Only rewrite decimal spellings whose numeric value is unchanged exactly.
+fn Printer::number(self : Printer, start : Int, end : Int) -> Unit {
+  let source = self.program.source
+  guard decimal_spelling(source, start, end) is Some(decimal) else {
     self.span(start, end, true)
     return
   }
-  let text = StringBuilder()
-  text.write_substring(source, mantissa, exponent - mantissa)
-  text.write_string("e")
-  if negative {
-    text.write_string("-")
+  if decimal.exponent_marker == end {
+    // BigInt and other bases were excluded by the decimal scan.
+    if decimal.is_integer &&
+      integer_exponent_spelling(source, start, end) is Some(text) {
+      self.text(text, true)
+    } else {
+      self.span(decimal.mantissa_start, end, true)
+    }
+  } else if shortened_exponent_spelling(source, start, end, decimal)
+    is Some(text) {
+    self.text(text, true)
+  } else {
+    self.span(start, end, true)
   }
-  text.write_substring(source, significant, end - significant)
-  self.text(text.to_string(), true)
+}
+
+///|
+priv struct QuoteCosts {
+  unescaped_length : Int
+  single_quotes : Int
+  double_quotes : Int
+}
+
+///|
+fn quote_costs(source : String, start : Int, end : Int) -> QuoteCosts {
+  for index = start + 1, unescaped_length = end - start, single_quotes = 0, double_quotes = 0 {
+    guard index < end - 1 else {
+      break { unescaped_length, single_quotes, double_quotes, }
+    }
+    let is_escaped = source[index] == '\\'
+    let character_index = index + (if is_escaped { 1 } else { 0 })
+    let character = source[character_index]
+    let is_quote = character == '\'' || character == '"'
+    continue character_index + 1,
+      unescaped_length - (if is_escaped && is_quote { 1 } else { 0 }),
+      single_quotes + (if character == '\'' { 1 } else { 0 }),
+      double_quotes + (if character == '"' { 1 } else { 0 })
+  }
+}
+
+///|
+fn QuoteCosts::preferred_quote(self : QuoteCosts, original : UInt16) -> UInt16 {
+  if self.single_quotes < self.double_quotes {
+    '\''
+  } else if self.double_quotes < self.single_quotes {
+    '"'
+  } else {
+    original
+  }
+}
+
+///|
+fn QuoteCosts::quoted_length(self : QuoteCosts, quote : UInt16) -> Int {
+  self.unescaped_length +
+  (if quote == '\'' { self.single_quotes } else { self.double_quotes })
 }
 
 ///|
@@ -97,25 +170,9 @@ fn Printer::string(self : Printer, start : Int, end : Int) -> Unit {
     self.span(start, end, true)
     return
   }
-  let (base, singles, doubles) = for index = start + 1, base = end - start, singles = 0, doubles = 0 {
-    guard index < end - 1 else { break (base, singles, doubles) }
-    let escaped = source[index] == '\\'
-    let c = source[index + (if escaped { 1 } else { 0 })]
-    let quote = c == '\'' || c == '"'
-    continue index + (if escaped { 2 } else { 1 }),
-      base - (if escaped && quote { 1 } else { 0 }),
-      singles + (if quote && c == '\'' { 1 } else { 0 }),
-      doubles + (if quote && c == '"' { 1 } else { 0 })
-  }
-  let quote : UInt16 = if singles < doubles {
-    '\''
-  } else if doubles < singles {
-    '"'
-  } else {
-    source[start]
-  }
-  let length = base + (if quote == '\'' { singles } else { doubles })
-  guard length < end - start else {
+  let costs = quote_costs(source, start, end)
+  let quote = costs.preferred_quote(source[start])
+  guard costs.quoted_length(quote) < end - start else {
     self.span(start, end, false)
     return
   }
@@ -132,27 +189,22 @@ fn quoted_text(
   let text = StringBuilder()
   let delimiter = if quote == '\'' { "'" } else { "\"" }
   text.write_string(delimiter)
-  let remaining = for index = start + 1, segment = start + 1 {
-    guard index < end - 1 else { break segment }
-    if source[index] == '\\' {
-      let c = source[index + 1]
-      if c == '\'' || c == '"' {
-        text.write_substring(source, segment, index - segment)
-        if c == quote {
-          text.write_string("\\")
-        }
-        text.write_substring(source, index + 1, 1)
-        continue index + 2, index + 2
-      }
-      continue index + 2, segment
-    }
-    if source[index] == quote {
-      text.write_substring(source, segment, index - segment)
+  let remaining = for index = start + 1, segment_start = start + 1 {
+    guard index < end - 1 else { break segment_start }
+    let is_escaped = source[index] == '\\'
+    let character_index = index + (if is_escaped { 1 } else { 0 })
+    let character = source[character_index]
+    let is_quote = character == '\'' || character == '"'
+    let needs_rewrite = (is_escaped && is_quote) ||
+      (!is_escaped && character == quote)
+    let next_index = character_index + 1
+    guard needs_rewrite else { continue next_index, segment_start }
+    text.write_substring(source, segment_start, index - segment_start)
+    if character == quote {
       text.write_string("\\")
-      text.write_substring(source, index, 1)
-      continue index + 1, index + 1
     }
-    continue index + 1, segment
+    text.write_substring(source, character_index, 1)
+    continue next_index, next_index
   }
   // Copy contiguous source spans so UTF-16 surrogate pairs are never split.
   text.write_substring(source, remaining, end - 1 - remaining)

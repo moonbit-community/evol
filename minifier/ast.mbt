@@ -128,6 +128,48 @@ fn Node::new(kind : NodeKind, a : Int, b : Int, c : Int, d : Int) -> Node {
 }
 
 ///|
+const DECLARATION_VAR : Int = 0
+
+///|
+const DECLARATION_LET : Int = 1
+
+///|
+const DECLARATION_CONST : Int = 2
+
+///|
+const METHOD_ORDINARY : Int = 0
+
+///|
+const METHOD_GETTER : Int = 1
+
+///|
+const METHOD_SETTER : Int = 2
+
+///|
+const CLASS_MEMBER_STATIC : Int = 1
+
+///|
+const CLASS_MEMBER_COMPUTED : Int = 2
+
+///|
+const PROPERTY_COMPUTED : Int = 1
+
+///|
+const PROPERTY_SHORTHAND : Int = 1
+
+///|
+const CHAIN_OPTIONAL : Int = 1
+
+///|
+const MEMBER_NEW_TARGET : Int = 2
+
+///|
+const UPDATE_PREFIX : Int = 1
+
+///|
+const UPDATE_POSTFIX : Int = 0
+
+///|
 #valtype
 priv struct Function {
   name : Int
@@ -242,7 +284,7 @@ priv struct Program {
 
 ///|
 fn Program::new(source : String) -> Program {
-  let p : Program = {
+  let program : Program = {
     source,
     nodes: [],
     edges: [],
@@ -265,14 +307,14 @@ fn Program::new(source : String) -> Program {
     },
     has_dynamic_scope: false,
     cover_defaults: 0,
-    character_counts: Array::make(64, 0),
+    character_counts: Array::make(NAME_REST.length(), 0),
     alphabet: { first: NAME_FIRST, rest: NAME_REST, },
     property_names: {},
     member_names: {},
     property_reserved: @hashset.HashSet([]),
   }
-  ignore(p.push_scope(-1, scope_module))
-  p
+  ignore(program.push_scope(-1, scope_module))
+  program
 }
 
 ///|
@@ -289,16 +331,16 @@ fn Program::node(
 }
 
 ///|
-fn Program::add_operator(self : Program, t : Operator) -> Int {
-  self.operators.push(t)
+fn Program::add_operator(self : Program, operator : Operator) -> Int {
+  self.operators.push(operator)
   self.operators.length() - 1
 }
 
 ///|
 fn Program::edge_list(self : Program, items : Array[Int]) -> (Int, Int) {
   let offset = self.edges.length()
-  for x in items {
-    self.edges.push(x)
+  for item in items {
+    self.edges.push(item)
   }
   (offset, items.length())
 }
@@ -347,10 +389,10 @@ fn Program::symbol_root(self : Program, id : Int) -> Int {
 
 ///|
 fn Program::link_symbols(self : Program, left : Int, right : Int) -> Unit {
-  let left = self.symbol_root(left)
-  let right = self.symbol_root(right)
-  if left != right {
-    self.symbols[right] = { ..self.symbols[right], link: left, }
+  let left_root = self.symbol_root(left)
+  let right_root = self.symbol_root(right)
+  if left_root != right_root {
+    self.symbols[right_root] = { ..self.symbols[right_root], link: left_root, }
   }
 }
 

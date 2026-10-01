@@ -1,6 +1,28 @@
 ///|
 async fn main {
-  let command = @argparse.Command::Command(
+  let matches = cli_command().parse() catch {
+    error => {
+      fail(@debug.to_string(error))
+      return
+    }
+  }
+  let top_level = !matches.flags.get("no-toplevel").unwrap_or(false)
+  let internal_properties = requested_properties(
+    matches.values.get("mangle-props").unwrap_or([]),
+  )
+  let source = read_source(matches)
+  let output = @minifier.minify_with(source, top_level, internal_properties~) catch {
+    error => {
+      fail(Show::to_string(error))
+      return
+    }
+  }
+  @stdio.stdout.write(output)
+}
+
+///|
+fn cli_command() -> @argparse.Command {
+  @argparse.Command::Command(
     "evol",
     about="Minify a JavaScript file",
     version="0.1.0",
@@ -27,36 +49,25 @@ async fn main {
       ),
     ],
   )
-  let matches = command.parse() catch {
-    error => {
-      fail(@debug.to_string(error))
-      return
-    }
-  }
-  let top_level = !matches.flags.get("no-toplevel").unwrap_or(false)
-  let internal_properties : Array[String] = []
-  for group in matches.values.get("mangle-props").unwrap_or([]) {
+}
+
+///|
+fn requested_properties(groups : Array[String]) -> Array[String] {
+  let properties : Array[String] = []
+  for group in groups {
     for name in group.split(",") {
-      internal_properties.push(name.trim().to_owned())
+      properties.push(name.trim().to_owned())
     }
   }
-  let source = match matches.values.get("input") {
-    Some(paths) if paths.length() > 0 => @fs.read_file(paths[0]).text()
-    _ => @stdio.stdin.read_all().text()
+  properties
+}
+
+///|
+async fn read_source(matches : @argparse.Matches) -> String {
+  guard matches.values.get("input") is Some(paths) && paths.length() > 0 else {
+    return @stdio.stdin.read_all().text()
   }
-  let output = try {
-    if top_level {
-      @minifier.minify(source, internal_properties~)
-    } else {
-      @minifier.minify_with(source, false, internal_properties~)
-    }
-  } catch {
-    error => {
-      fail(Show::to_string(error))
-      return
-    }
-  }
-  @stdio.stdout.write(output)
+  @fs.read_file(paths[0]).text()
 }
 
 ///|
