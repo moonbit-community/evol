@@ -1,57 +1,4 @@
 ///|
-fn is_line_terminator(character : UInt16) -> Bool {
-  character == '\n' ||
-  character == '\r' ||
-  character == '\u{2028}' ||
-  character == '\u{2029}'
-}
-
-///|
-fn is_ascii_identifier_character(character : Char, first : Bool) -> Bool {
-  character.is_ascii_alphabetic() ||
-  character == '_' ||
-  character == '$' ||
-  (!first && character.is_ascii_digit())
-}
-
-///|
-fn is_escaped_identifier_character(character : Char, first : Bool) -> Bool {
-  let allowed = character.to_int() >= 0x80 ||
-    is_ascii_identifier_character(character, first)
-  allowed && !character.is_whitespace()
-}
-
-///|
-fn is_digit(character : UInt16) -> Bool {
-  character >= '0' && character <= '9'
-}
-
-///|
-fn is_hex(character : UInt16) -> Bool {
-  is_digit(character) ||
-  (character >= 'a' && character <= 'f') ||
-  (character >= 'A' && character <= 'F')
-}
-
-///|
-fn is_oct(character : UInt16) -> Bool {
-  character >= '0' && character <= '7'
-}
-
-///|
-fn hex_digit_value(character : UInt16) -> Int? {
-  guard is_hex(character) else { return None }
-  let digit = if character <= '9' {
-    character.to_int() - '0'.to_int()
-  } else if character <= 'F' {
-    character.to_int() - 'A'.to_int() + 10
-  } else {
-    character.to_int() - 'a'.to_int() + 10
-  }
-  Some(digit)
-}
-
-///|
 priv struct Lexer {
   source : String
   // The next unread UTF-16 code unit; token spans are [start, end).
@@ -135,21 +82,6 @@ fn Lexer::invalid_escape(self : Lexer, message : String) -> ParseError {
 }
 
 ///|
-fn Lexer::character(self : Lexer) -> UInt16 {
-  self.character_at(0)
-}
-
-///|
-fn Lexer::character_at(self : Lexer, offset : Int) -> UInt16 {
-  let index = self.position + offset
-  if index < 0 || index >= self.source.length() {
-    0
-  } else {
-    self.source[index]
-  }
-}
-
-///|
 fn Lexer::is_keyword(self : Lexer, keyword : String) -> Bool {
   self.token == Identifier &&
   self.source
@@ -208,7 +140,7 @@ fn Lexer::skip_trivia(self : Lexer) -> Unit raise ParseError {
 // Only ill-formed UTF-16 can interrupt the regex before the end of a line.
 fn Lexer::line_comment_tail(self : Lexer) -> Unit {
   while self.position < self.source.length() &&
-        is_surrogate_code_unit(self.character()) {
+        self.source.get_char(self.position) is None {
     self.position += 1
     lexmatch self.source.view(start_offset=self.position) {
       (re"^[^\n\r\u2028\u2029]*", after=rest) =>
@@ -236,8 +168,7 @@ fn Lexer::block_comment_tail(
         self.position = rest.start_offset()
       (re"^\*+", after=rest) => self.position = rest.start_offset()
       _ => {
-        guard self.position < self.source.length() &&
-          is_surrogate_code_unit(self.character()) else {
+        guard self.position < self.source.length() else {
           raise Unterminated(position_at(self.source, comment_start), "comment")
         }
         self.position += 1
@@ -261,14 +192,15 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
   lexmatch self.source.view(start_offset=self.position) with longest {
     (re"^" + NUMBER_SPELLING, after=rest) => self.finish_token(Number, rest)
     (re"^(?:[A-Za-z_$#\\]|[^\u0000-\u007F])", after=_) => self.identifier()
-    (re"^['\"]", after=_) => self.string(self.character())
+    (re"^'", after=_) => self.string('\'')
+    (re"^\"", after=_) => self.string('"')
     (re"^`", after=rest) => {
       self.position = rest.start_offset()
       self.template_chunk(true)
     }
     (re"^$", after=rest) => self.finish_token(EndOfFile, rest)
     _ =>
-      if is_surrogate_code_unit(self.character()) {
+      if self.source.get_char(self.position) is None {
         self.identifier()
       } else {
         self.punctuation()
@@ -336,17 +268,14 @@ fn Lexer::punctuation(self : Lexer) -> Unit raise ParseError {
     (re"^%=", after=rest) => (ModuloAssignment, rest)
     (re"^/", after=rest) => (Slash, rest)
     (re"^/=", after=rest) => (DivisionAssignment, rest)
-    (re"^\?\.", after=rest) =>
-      // Before a digit, ? starts a conditional and the dot belongs to a number.
-      if is_digit(self.character_at(2)) {
-        (Question, self.source.view(start_offset=self.position + 1))
-      } else {
-        (OptionalChaining, rest)
-      }
+    // Before a digit, ? starts a conditional and the dot belongs to a number.
+    (re"^\?\.[0-9]", after=_) =>
+      (Question, self.source.view(start_offset=self.position + 1))
+    (re"^\?\.", after=rest) => (OptionalChaining, rest)
     _ =>
       raise UnexpectedCharacter(
         position_at(self.source, self.position),
-        self.character().to_int().to_char().unwrap_or('?'),
+        self.source[self.position].to_int().to_char().unwrap_or('?'),
       )
   }
   self.finish_token(token, rest)

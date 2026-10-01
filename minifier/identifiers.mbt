@@ -11,7 +11,7 @@ fn raw_identifier_end(source : String, start : Int) -> Int {
       _ => position
     }
     // Regex matches Unicode scalars; raw identifiers also accept lone surrogates.
-    guard end < source.length() && is_surrogate_code_unit(source[end]) else {
+    guard end < source.length() && source.get_char(end) is None else {
       break end
     }
     continue end + 1
@@ -19,27 +19,32 @@ fn raw_identifier_end(source : String, start : Int) -> Int {
 }
 
 ///|
-fn is_surrogate_code_unit(character : UInt16) -> Bool {
-  character >= 0xD800 && character <= 0xDFFF
-}
-
-///|
 fn Lexer::identifier(self : Lexer) -> Unit raise ParseError {
-  if self.character() == '#' {
-    self.position += 1
+  lexmatch self.source.view(start_offset=self.position) {
+    (re"^#", after=rest) => self.position = rest.start_offset()
+    _ => ()
   }
   let name_start = self.position
   while self.position < self.source.length() {
     self.position = raw_identifier_end(self.source, self.position)
-    guard self.character() == '\\' else { break }
-    let (character, end) = identifier_escape(self.source, self.position)
-    guard is_escaped_identifier_character(
-      character,
-      self.position == name_start,
-    ) else {
-      raise self.invalid_escape("invalid identifier escape")
+    lexmatch self.source.view(start_offset=self.position) {
+      (re"^\\", after=_) => {
+        let (character, end) = identifier_escape(self.source, self.position)
+        let allowed = lexmatch character.to_string() {
+          re"^[A-Za-z_$]$" => true
+          re"^[0-9]$" => self.position != name_start
+          // Unlike a raw name, an escaped name keeps U+FEFF as a character.
+          re"^[^\u0000-\u007F\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]$" =>
+            true
+          _ => false
+        }
+        guard allowed else {
+          raise self.invalid_escape("invalid identifier escape")
+        }
+        self.position = end
+      }
+      _ => break
     }
-    self.position = end
   }
   guard self.position > name_start else {
     raise self.syntax_error("identifier expected")
@@ -53,16 +58,23 @@ fn identifier_escape(
   source : String,
   start : Int,
 ) -> (Char, Int) raise ParseError {
-  guard start + 2 < source.length() && source[start + 1] == 'u' else {
+  guard start + 2 < source.length() else {
     raise InvalidEscape(
       position_at(source, start),
       "expected Unicode identifier escape",
     )
   }
-  let (code_point, end) = if source[start + 2] == '{' {
-    read_braced_identifier_escape(source, start + 3)
-  } else {
-    read_fixed_identifier_escape(source, start + 2)
+  let (code_point, end) = lexmatch
+    source.view(start_offset=start + 1) with longest {
+    (re"^u[{]", after=digits) =>
+      read_braced_identifier_escape(source, digits.start_offset())
+    (re"^u", after=digits) =>
+      read_fixed_identifier_escape(source, digits.start_offset())
+    _ =>
+      raise InvalidEscape(
+        position_at(source, start),
+        "expected Unicode identifier escape",
+      )
   }
   guard code_point.to_char() is Some(character) else {
     raise InvalidEscape(
@@ -78,11 +90,16 @@ fn read_fixed_identifier_escape(
   source : String,
   digits_start : Int,
 ) -> (Int, Int) raise ParseError {
-  let digits_end = digits_start + 4
-  for position = digits_start, code_point = 0 {
-    guard position < digits_end else { break (code_point, digits_end) }
-    let decoded = append_unicode_escape_digit(source, position, code_point)
-    continue position + 1, decoded
+  lexmatch source.view(start_offset=digits_start) with longest {
+    (re"^[0-9A-Fa-f]{0,4}" as digits, after=rest) => {
+      guard digits.length() == 4 else {
+        raise InvalidEscape(
+          position_at(source, rest.start_offset()),
+          "invalid Unicode escape",
+        )
+      }
+      (decode_identifier_code_point(source, digits), rest.start_offset())
+    }
   }
 }
 
@@ -91,34 +108,82 @@ fn read_braced_identifier_escape(
   source : String,
   digits_start : Int,
 ) -> (Int, Int) raise ParseError {
-  for position = digits_start, code_point = 0 {
-    if position < source.length() && source[position] == '}' {
-      guard position > digits_start else {
-        raise InvalidEscape(
-          position_at(source, position),
-          "empty Unicode escape",
-        )
+  lexmatch source.view(start_offset=digits_start) with longest {
+    (re"^[0-9A-Fa-f]*" as digits, after=rest) => {
+      let code_point = decode_identifier_code_point(source, digits)
+      lexmatch rest {
+        (re"^[}]", after=tail) => {
+          guard digits.length() > 0 else {
+            raise InvalidEscape(
+              position_at(source, rest.start_offset()),
+              "empty Unicode escape",
+            )
+          }
+          (code_point, tail.start_offset())
+        }
+        _ =>
+          raise InvalidEscape(
+            position_at(source, rest.start_offset()),
+            "invalid Unicode escape",
+          )
       }
-      break (code_point, position + 1)
     }
-    let decoded = append_unicode_escape_digit(source, position, code_point)
-    continue position + 1, decoded
   }
 }
 
 ///|
-fn append_unicode_escape_digit(
+fn decode_identifier_code_point(
   source : String,
-  position : Int,
-  code_point : Int,
+  digits : StringView,
 ) -> Int raise ParseError {
-  guard position < source.length() && code_point <= 0x10FFFF / 16 else {
-    raise InvalidEscape(position_at(source, position), "invalid Unicode escape")
+  let significant = lexmatch digits {
+    (re"^0+", after=rest) => rest
+    _ => digits
   }
-  guard hex_digit_value(source[position]) is Some(digit) else {
-    raise InvalidEscape(position_at(source, position), "invalid Unicode escape")
+  // Unicode uses at most six significant hex digits. Point range errors at
+  // the first digit that makes the value exceed the Unicode limit.
+  let prefix_length = if significant.length() > 6 {
+    6
+  } else {
+    significant.length()
   }
-  code_point * 16 + digit
+  let prefix_end = significant.start_offset() + prefix_length
+  let prefix = source.view(
+    start_offset=significant.start_offset(),
+    end_offset=prefix_end,
+  )
+  guard decode_escape_digits(prefix, 16) is Some(code_point) else {
+    raise InvalidEscape(
+      position_at(source, prefix_end),
+      "invalid Unicode escape",
+    )
+  }
+  guard code_point <= 0x10FFFF else {
+    raise InvalidEscape(
+      position_at(source, prefix_end - 1),
+      "invalid Unicode escape",
+    )
+  }
+  guard significant.length() <= prefix_length else {
+    raise InvalidEscape(
+      position_at(source, prefix_end),
+      "invalid Unicode escape",
+    )
+  }
+  code_point
+}
+
+///|
+/// Callers recognize the digit syntax; this step converts its numeric value.
+fn decode_escape_digits(digits : StringView, radix : Int) -> Int? {
+  let significant = lexmatch digits {
+    (re"^0+", after=rest) => rest
+    _ => digits
+  }
+  guard significant.length() > 0 else { return Some(0) }
+  Some(@string.parse_int(significant, base=radix)) catch {
+    _ => None
+  }
 }
 
 ///|
@@ -130,14 +195,17 @@ fn identifier_name(
   let output = StringBuilder()
   for position = start {
     guard position < end else { break }
-    if source[position] == '\\' {
-      let (character, next) = identifier_escape(source, position)
-      output.write_char(character)
-      continue next
-    } else {
-      let literal_end = identifier_literal_end(source, position, end)
-      output.write_substring(source, position, literal_end - position)
-      continue literal_end
+    lexmatch source.view(start_offset=position, end_offset=end) {
+      (re"^\\", after=_) => {
+        let (character, next) = identifier_escape(source, position)
+        output.write_char(character)
+        continue next
+      }
+      _ => {
+        let literal_end = identifier_literal_end(source, position, end)
+        output.write_substring(source, position, literal_end - position)
+        continue literal_end
+      }
     }
   }
   output.to_string()
@@ -151,7 +219,7 @@ fn identifier_literal_end(source : String, start : Int, end : Int) -> Int {
       (re"^[^\\]+", after=rest) => rest.start_offset()
       _ => position
     }
-    guard literal_end < end && is_surrogate_code_unit(source[literal_end]) else {
+    guard literal_end < end && source.get_char(literal_end) is None else {
       break literal_end
     }
     continue literal_end + 1

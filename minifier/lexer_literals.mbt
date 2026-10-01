@@ -31,13 +31,13 @@ fn Lexer::string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
       (re"^[\r\n]", after=_) =>
         raise self.syntax_error("newline in string literal")
       (re"^\\", after=_) => {
-        guard is_surrogate_code_unit(self.character_at(1)) else {
+        guard self.position + 1 < self.source.length() else {
           raise self.unterminated("string escape")
         }
         self.position += 2
       }
       _ => {
-        guard is_surrogate_code_unit(self.character()) else {
+        guard self.position < self.source.length() else {
           raise self.unterminated("string literal")
         }
         self.position += 1
@@ -56,8 +56,10 @@ fn Lexer::regex(self : Lexer) -> Unit raise ParseError {
         self.position = rest.start_offset()
       (re"^\\[^\r\n\u{2028}\u{2029}]", after=rest) =>
         self.position = rest.start_offset()
+      (re"^\\[\r\n\u{2028}\u{2029}]", after=_) =>
+        raise self.unterminated("regular expression escape")
       (re"^\\", after=_) => {
-        guard is_surrogate_code_unit(self.character_at(1)) else {
+        guard self.position + 1 < self.source.length() else {
           raise self.unterminated("regular expression escape")
         }
         self.position += 2
@@ -81,7 +83,7 @@ fn Lexer::regex(self : Lexer) -> Unit raise ParseError {
       (re"^[\r\n\u{2028}\u{2029}]", after=_) =>
         raise self.syntax_error("newline in regular expression")
       _ => {
-        guard is_surrogate_code_unit(self.character()) else {
+        guard self.position < self.source.length() else {
           raise self.unterminated("regular expression")
         }
         self.position += 1
@@ -117,13 +119,13 @@ fn Lexer::template_chunk(
       }
       (re"^\$", after=rest) => self.position = rest.start_offset()
       (re"^\\", after=_) => {
-        guard is_surrogate_code_unit(self.character_at(1)) else {
+        guard self.position + 1 < self.source.length() else {
           raise self.unterminated("template escape")
         }
         self.position += 2
       }
       _ => {
-        guard is_surrogate_code_unit(self.character()) else {
+        guard self.position < self.source.length() else {
           raise self.unterminated("template literal")
         }
         self.position += 1

@@ -17,7 +17,7 @@ fn PropertyAnalysis::new(
 ) -> PropertyAnalysis {
   let allowed = @hashset.HashSet([])
   for name in requested {
-    if ascii_property_name(name) {
+    if name =~ ASCII_PROPERTY_NAME {
       allowed.add(name)
     }
   }
@@ -77,12 +77,12 @@ fn PropertyAnalysis::key_name(
   guard node.kind == StringLiteral || node.kind == TemplateNoSubstitution else {
     return None
   }
-  if is_property_quote(program.source[node.a]) {
+  if program.source.view(start_offset=node.a) =~ (PROPERTY_QUOTE_START, after=_) {
     return self.quoted_name(node.a, node.b)
   }
   guard !computed else { return None }
   let name = program.names[program.identifier(node.a, node.b)]
-  if ascii_property_name(name) {
+  if name =~ ASCII_PROPERTY_NAME {
     Some(name)
   } else {
     None
@@ -108,7 +108,7 @@ fn PropertyAnalysis::collect(self : PropertyAnalysis) -> Unit raise ParseError {
     match node.kind {
       Member if node.a >= 0 => {
         let name = program.names[program.identifier(node.b, node.c)]
-        if ascii_property_name(name) {
+        if name =~ ASCII_PROPERTY_NAME {
           self.members[id] = name
         }
       }
@@ -141,7 +141,12 @@ fn PropertyAnalysis::preserve_strings(self : PropertyAnalysis) -> Unit {
       (node.kind == StringLiteral || node.kind == TemplateNoSubstitution) else {
       continue
     }
-    guard is_property_quote(program.source[node.a]) else { continue }
+    guard program.source.view(start_offset=node.a) =~ (
+      PROPERTY_QUOTE_START,
+      after=_,
+    ) else {
+      continue
+    }
     if self.quoted_name(node.a, node.b) is Some(name) {
       self.pinned.add(name)
     }
