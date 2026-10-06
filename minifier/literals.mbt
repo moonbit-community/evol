@@ -98,6 +98,8 @@ fn shortened_exponent_spelling(
 ///|
 /// Only rewrite decimal spellings whose numeric value is unchanged exactly.
 fn Printer::number(self : Printer, start : Int, end : Int) -> Unit {
+  // No supported numeric rewrite can shorten a one- or two-character spelling.
+  guard end - start > 2 else { return self.span(start, end, true) }
   let source = self.program.source
   guard decimal_spelling(source, start, end) is Some(decimal) else {
     self.span(start, end, true)

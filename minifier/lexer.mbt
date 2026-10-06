@@ -244,21 +244,33 @@ fn Lexer::number_token(self : Lexer) -> Unit {
 }
 
 ///|
+fn ascii_identifier_rest(input : StringView) -> StringView {
+  // position is the first unread UTF-16 code unit within input.
+  let end = for position = 0 {
+    guard position < input.length() else { break position }
+    match input[position] {
+      'A'..='Z' | 'a'..='z' | '0'..='9' | '_' | '$' | '#' =>
+        continue position + 1
+      _ => break position
+    }
+  }
+  input.view(start_offset=end)
+}
+
+///|
 fn Lexer::identifier_token(
   self : Lexer,
   tail : StringView,
 ) -> Unit raise ParseError {
-  // Scan the common ASCII run with a small automaton, then handle names that
-  // continue through an escape or a non-ASCII character.
-  lexmatch tail with longest {
-    (re"^[A-Za-z0-9_$#]*", after=rest) =>
-      lexmatch rest {
-        (re"^\\" | re"^" + RAW_IDENTIFIER_START, after=_) => {
-          self.position = rest.start_offset()
-          self.identifier_tail(self.start)
-        }
-        _ => self.finish_identifier(rest)
-      }
+  // MoonBit's generated names have long ASCII runs. Scan those directly, then
+  // handle names that continue through an escape or a non-ASCII character.
+  let rest = ascii_identifier_rest(tail)
+  lexmatch rest {
+    (re"^\\" | re"^" + RAW_IDENTIFIER_START, after=_) => {
+      self.position = rest.start_offset()
+      self.identifier_tail(self.start)
+    }
+    _ => self.finish_identifier(rest)
   }
 }
 

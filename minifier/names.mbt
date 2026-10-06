@@ -14,16 +14,6 @@ const NAME_REST : String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 const ASCII_CHARACTER_COUNT : Int = 128
 
 ///|
-// Inverse of NAME_REST. A missing character has no frequency bucket.
-let name_character_slots : Array[Int] = {
-  let slots = Array::make(ASCII_CHARACTER_COUNT, -1)
-  for slot in 0..<NAME_REST.length() {
-    slots[NAME_REST[slot].to_int()] = slot
-  }
-  slots
-}
-
-///|
 priv struct NameGenerator {
   alphabet : NameAlphabet
   reserved : @hashset.HashSet[String]
@@ -49,6 +39,7 @@ fn NameGenerator::next_name(self : NameGenerator) -> String {
 }
 
 ///|
+/// Count source characters directly; alphabet selection filters identifier chars.
 fn count_characters(
   source : String,
   start : Int,
@@ -57,9 +48,9 @@ fn count_characters(
   delta : Int,
 ) -> Unit {
   for index in start..<end {
-    let slot = name_character_slots.get(source[index].to_int()).unwrap_or(-1)
-    guard slot >= 0 else { continue }
-    counts[slot] += delta
+    let character = source[index].to_int()
+    guard character < ASCII_CHARACTER_COUNT else { continue }
+    counts[character] += delta
   }
 }
 
@@ -72,9 +63,10 @@ fn Program::name_alphabet(program : Program) -> NameAlphabet {
 ///|
 fn Program::unchanged_character_counts(program : Program) -> Array[Int] {
   let counts = program.character_counts.copy()
-  let counted_removals : @hashset.HashSet[Int] = @hashset.HashSet([])
+  // One bit per UTF-16 source position, shared by references and property keys.
+  let counted_removals = FixedArray::make(program.source.length() / 32 + 1, 0U)
   let subtract_name = (start, end) => {
-    guard counted_removals.add_and_check(start) else { return }
+    guard mark_removed_position(counted_removals, start) else { return }
     count_characters(program.source, start, end, counts, -1)
   }
   for reference in program.references {
@@ -103,10 +95,21 @@ fn Program::unchanged_character_counts(program : Program) -> Array[Int] {
 }
 
 ///|
+fn mark_removed_position(positions : FixedArray[UInt], start : Int) -> Bool {
+  let word_index = start / 32
+  let position_mask = 1U << (start % 32)
+  let word = positions[word_index]
+  guard (word & position_mask) == 0U else { return false }
+  positions[word_index] = word | position_mask
+  true
+}
+
+///|
 fn alphabet_by_frequency(counts : Array[Int]) -> NameAlphabet {
   let order = Array::makei(NAME_REST.length(), index => index)
   order.sort_by((left, right) => {
-    let difference = counts[right] - counts[left]
+    let difference = counts[NAME_REST[right].to_int()] -
+      counts[NAME_REST[left].to_int()]
     guard difference == 0 else { return difference }
     left - right
   })

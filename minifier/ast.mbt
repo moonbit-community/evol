@@ -303,7 +303,7 @@ fn Program::new(source : String) -> Program {
     identifier_ids: IdentifierTable::new(),
     has_dynamic_scope: false,
     cover_defaults: 0,
-    character_counts: Array::make(NAME_REST.length(), 0),
+    character_counts: Array::make(ASCII_CHARACTER_COUNT, 0),
     alphabet: { first: NAME_FIRST, rest: NAME_REST, },
     property_names: {},
     member_names: {},

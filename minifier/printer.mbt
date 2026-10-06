@@ -144,8 +144,24 @@ fn Printer::reference(self : Printer, id : Int) -> Unit {
 
 ///|
 fn Printer::statements(self : Printer, offset : Int, count : Int) -> Unit {
+  let mut previous_declaration_kind = -1
   for i in 0..<count {
-    self.statement(self.program.edges[offset + i])
+    let id = self.program.edges[offset + i]
+    let node = self.program.nodes[id]
+    if node.kind == VariableDeclaration {
+      if node.a == previous_declaration_kind {
+        self.pending_semicolon = false
+        self.text(",", false)
+        self.declarators(node.b, node.c)
+        self.pending_semicolon = true
+      } else {
+        self.statement(id)
+      }
+      previous_declaration_kind = node.a
+    } else {
+      self.statement(id)
+      previous_declaration_kind = -1
+    }
   }
 }
 
@@ -894,11 +910,16 @@ fn Printer::declaration(self : Printer, node : Node) -> Unit {
     },
     true,
   )
-  for i in 0..<node.c {
+  self.declarators(node.b, node.c)
+}
+
+///|
+fn Printer::declarators(self : Printer, offset : Int, count : Int) -> Unit {
+  for i in 0..<count {
     if i > 0 {
       self.text(",", false)
     }
-    let declarator = self.program.nodes[self.program.edges[node.b + i]]
+    let declarator = self.program.nodes[self.program.edges[offset + i]]
     self.pattern(declarator.a)
     guard declarator.b >= 0 else { continue }
     self.text("=", false)
