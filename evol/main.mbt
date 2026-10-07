@@ -20,7 +20,7 @@ fn cli_command() -> @argparse.Command {
   @argparse.Command::Command(
     "evol",
     about="Minify a JavaScript file",
-    version="0.1.0",
+    version="0.2.0",
     flags=[
       @argparse.FlagArg::FlagArg(
         "top",
