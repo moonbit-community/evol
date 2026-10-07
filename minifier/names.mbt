@@ -44,7 +44,7 @@ fn count_characters(
   source : String,
   start : Int,
   end : Int,
-  counts : Array[Int],
+  counts : FixedArray[Int],
   delta : Int,
 ) -> Unit {
   for index in start..<end {
@@ -61,7 +61,7 @@ fn Program::name_alphabet(program : Program) -> NameAlphabet {
 }
 
 ///|
-fn Program::unchanged_character_counts(program : Program) -> Array[Int] {
+fn Program::unchanged_character_counts(program : Program) -> FixedArray[Int] {
   let counts = program.character_counts.copy()
   // One bit per UTF-16 source position, shared by references and property keys.
   let counted_removals = FixedArray::make(program.source.length() / 32 + 1, 0U)
@@ -71,7 +71,7 @@ fn Program::unchanged_character_counts(program : Program) -> Array[Int] {
   }
   for reference in program.references {
     guard reference.symbol >= 0 &&
-      (program.symbols[reference.symbol].flags & symbol_preserved) == 0 else {
+      (program.symbols[reference.symbol].flags & SYMBOL_PRESERVED) == 0 else {
       continue
     }
     subtract_name(reference.name_start, reference.name_end)
@@ -105,7 +105,7 @@ fn mark_removed_position(positions : FixedArray[UInt], start : Int) -> Bool {
 }
 
 ///|
-fn alphabet_by_frequency(counts : Array[Int]) -> NameAlphabet {
+fn alphabet_by_frequency(counts : FixedArray[Int]) -> NameAlphabet {
   let order = Array::makei(NAME_REST.length(), index => index)
   order.sort_by((left, right) => {
     let difference = counts[NAME_REST[right].to_int()] -

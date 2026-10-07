@@ -90,8 +90,8 @@ fn Lexer::invalid_escape(self : Lexer, message : String) -> ParseError {
 const LINE_TERMINATORS : Regex = re"[\n\r\u2028\u2029]+"
 
 ///|
-// Keep the existing whitespace set; line terminators are tracked separately.
-const TOKEN_WHITESPACE : Regex = re"[ \t\v\f\u0085\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF]+"
+// ASCII whitespace is scanned directly; preserve the non-ASCII set here.
+const NON_ASCII_WHITESPACE : Regex = re"[\u0085\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF]+"
 
 ///|
 const DECIMAL_MANTISSA : Regex = re"[0-9][0-9_]*(?:\.[0-9_]*)?" |
@@ -153,6 +153,13 @@ fn Lexer::finish_token(self : Lexer, token : Token, rest : StringView) -> Unit {
 }
 
 ///|
+fn Lexer::finish_single_character_token(self : Lexer, token : Token) -> Unit {
+  self.token = token
+  self.position += 1
+  self.end = self.position
+}
+
+///|
 fn Lexer::finish_identifier(
   self : Lexer,
   rest : StringView,
@@ -170,67 +177,117 @@ fn Lexer::finish_identifier(
 }
 
 ///|
+fn Lexer::skip_ascii_whitespace(self : Lexer) -> Unit {
+  self.position = for position = self.position {
+    guard position < self.source.length() else { break position }
+    match self.source[position] {
+      ' ' | '\t' | '\u000B' | '\u000C' => continue position + 1
+      '\n' | '\r' => {
+        self.newline_before = true
+        continue position + 1
+      }
+      _ => break position
+    }
+  }
+}
+
+///|
+/// Called with position immediately after the comment marker.
+fn Lexer::line_comment(self : Lexer) -> Unit {
+  lexmatch self.source.view(start_offset=self.position) {
+    (re"^[^\n\r\u2028\u2029]*", after=rest) =>
+      self.position = rest.start_offset()
+  }
+  self.line_comment_tail()
+}
+
+///|
 fn Lexer::next(self : Lexer) -> Unit raise ParseError {
   self.newline_before = false
   self.keyword = NotKeyword
+  let source = self.source
+  let length = source.length()
   while true {
     self.start = self.position
-    lexmatch self.source.view(start_offset=self.position) {
-      (re"^" + LINE_TERMINATORS, after=rest) => {
-        self.newline_before = true
-        self.position = rest.start_offset()
+    guard self.position < length else {
+      return self.finish_token(EndOfFile, source.view(start_offset=length))
+    }
+    let character = source[self.position]
+    match character {
+      ' ' | '\t' | '\u000B' | '\u000C' | '\n' | '\r' => {
+        self.skip_ascii_whitespace()
         continue
       }
-      (re"^" + TOKEN_WHITESPACE, after=rest) => {
-        self.position = rest.start_offset()
-        continue
-      }
-      (re"^//[^\n\r\u2028\u2029]*", after=rest) => {
-        self.position = rest.start_offset()
-        self.line_comment_tail()
-        continue
-      }
-      (re"^#![^\n\r\u2028\u2029]*", after=rest) => {
-        guard self.position == 0 else {
-          self.position += 1
-          return self.identifier_tail(self.position)
+      'A'..='Z' | 'a'..='z' | '_' | '$' =>
+        return self.identifier_token(
+          source.view(start_offset=self.position + 1),
+        )
+      '0'..='9' => return self.number_token()
+      '.' => {
+        let next = self.position + 1
+        if next < length && source[next] >= '0' && source[next] <= '9' {
+          return self.number_token()
         }
-        self.position = rest.start_offset()
-        self.line_comment_tail()
-        continue
+        return self.operator_token()
       }
-      (re"^/\*", after=rest) => {
-        let comment_start = self.position
-        self.position = rest.start_offset()
-        self.block_comment_tail(comment_start)
-        continue
+      '/' => {
+        let next = self.position + 1
+        if next < length && source[next] == '/' {
+          self.position = next + 1
+          self.line_comment()
+          continue
+        }
+        if next < length && source[next] == '*' {
+          let comment_start = self.position
+          self.position = next + 1
+          self.block_comment_tail(comment_start)
+          continue
+        }
+        return self.operator_token()
       }
-      (re"^[0-9]|^\.[0-9]", after=_) => return self.number_token()
-      (re"^" + RAW_IDENTIFIER_START, after=rest) =>
-        return self.identifier_token(rest)
-      (re"^#", after=rest) => {
-        self.position = rest.start_offset()
-        return self.identifier_tail(self.position)
+      '#' => {
+        let next = self.position + 1
+        if self.position == 0 && next < length && source[next] == '!' {
+          self.position = next + 1
+          self.line_comment()
+          continue
+        }
+        self.position = next
+        return self.identifier_tail(next)
       }
-      (re"^\\", after=_) => return self.identifier_tail(self.position)
-      (re"^'", after=_) => return self.string('\'')
-      (re"^\"", after=_) => return self.string('"')
-      (re"^`", after=rest) => {
-        self.position = rest.start_offset()
+      '\\' => return self.identifier_tail(self.position)
+      '\'' => return self.string('\'')
+      '"' => return self.string('"')
+      '`' => {
+        self.position += 1
         return self.template_chunk(true)
       }
-      (re"^$", after=rest) => return self.finish_token(EndOfFile, rest)
-      (re"^\(", after=rest) => return self.finish_token(LeftParenthesis, rest)
-      (re"^\)", after=rest) => return self.finish_token(RightParenthesis, rest)
-      (re"^\[", after=rest) => return self.finish_token(LeftBracket, rest)
-      (re"^\]", after=rest) => return self.finish_token(RightBracket, rest)
-      (re"^[{]", after=rest) => return self.finish_token(LeftBrace, rest)
-      (re"^[}]", after=rest) => return self.finish_token(RightBrace, rest)
-      (re"^;", after=rest) => return self.finish_token(Semicolon, rest)
-      (re"^,", after=rest) => return self.finish_token(Comma, rest)
-      (re"^:", after=rest) => return self.finish_token(Colon, rest)
-      (re"^~", after=rest) => return self.finish_token(Tilde, rest)
-      _ => return self.operator_token()
+      '(' => return self.finish_single_character_token(LeftParenthesis)
+      ')' => return self.finish_single_character_token(RightParenthesis)
+      '[' => return self.finish_single_character_token(LeftBracket)
+      ']' => return self.finish_single_character_token(RightBracket)
+      '{' => return self.finish_single_character_token(LeftBrace)
+      '}' => return self.finish_single_character_token(RightBrace)
+      ';' => return self.finish_single_character_token(Semicolon)
+      ',' => return self.finish_single_character_token(Comma)
+      ':' => return self.finish_single_character_token(Colon)
+      '~' => return self.finish_single_character_token(Tilde)
+      '\u0000'..='\u007F' => return self.operator_token()
+      _ =>
+        lexmatch source.view(start_offset=self.position) {
+          (re"^[\u2028\u2029]+", after=rest) => {
+            self.newline_before = true
+            self.position = rest.start_offset()
+            continue
+          }
+          (re"^" + NON_ASCII_WHITESPACE, after=rest) => {
+            self.position = rest.start_offset()
+            continue
+          }
+          (re"^" + RAW_IDENTIFIER_START, after=rest) =>
+            return self.identifier_token(rest)
+          _ => return self.operator_token()
+        }
     }
   }
 }

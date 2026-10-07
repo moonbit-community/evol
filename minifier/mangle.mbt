@@ -52,21 +52,22 @@ fn Program::reserve_symbol_names(
   }
   for index in 0..<self.symbols.length() {
     let symbol = self.symbols[index]
+    guard (symbol.flags & SYMBOL_ELIDED) == 0 else { continue }
     let root_index = self.symbol_root(index)
     let root = self.symbols[root_index]
-    let must_preserve = (symbol.flags & symbol_preserved) != 0 ||
-      symbol.name == name_arguments ||
+    let must_preserve = (symbol.flags & SYMBOL_PRESERVED) != 0 ||
+      symbol.name == NAME_ARGUMENTS ||
       self.preserved_names.contains(symbol.name) ||
       (symbol.scope == 0 && !rename_top_level)
     let flags = if must_preserve {
-      root.flags | symbol_preserved
+      root.flags | SYMBOL_PRESERVED
     } else {
       root.flags
     }
     if flags != root.flags {
       self.symbols[root_index] = { ..root, flags, }
     }
-    if (flags & symbol_preserved) != 0 {
+    if (flags & SYMBOL_PRESERVED) != 0 {
       reserved.add(self.symbol_name(index))
     }
   }
@@ -80,7 +81,8 @@ fn Program::renameable_declarations(self : Program) -> Array[Array[Int]] {
   })
   for index in 0..<self.symbols.length() {
     let symbol = self.symbols[index]
-    guard symbol.link < 0 && (symbol.flags & symbol_preserved) == 0 else {
+    guard symbol.link < 0 &&
+      (symbol.flags & (SYMBOL_PRESERVED | SYMBOL_ELIDED)) == 0 else {
       continue
     }
     declarations[symbol.scope].push(index)
@@ -89,10 +91,10 @@ fn Program::renameable_declarations(self : Program) -> Array[Array[Int]] {
 }
 
 ///|
-fn Program::captured_symbols(self : Program) -> Array[@hashset.HashSet[Int]] {
-  let captured : Array[@hashset.HashSet[Int]] = Array::makei(
+fn Program::captured_symbols(self : Program) -> Array[@hashset.HashSet[Int]?] {
+  let captured : Array[@hashset.HashSet[Int]?] = Array::make(
     self.scopes.length(),
-    _ => @hashset.HashSet([]),
+    None,
   )
   for reference in self.references {
     guard reference.symbol >= 0 else { continue }
@@ -113,7 +115,7 @@ fn Program::assign_symbol_names(
   self : Program,
   reserved : @hashset.HashSet[String],
   declarations : Array[Array[Int]],
-  captured : Array[@hashset.HashSet[Int]],
+  captured : Array[@hashset.HashSet[Int]?],
 ) -> Unit {
   let candidates = self.generated_names
   let blocked : Array[Int] = []
@@ -128,10 +130,12 @@ fn Program::assign_symbol_names(
       guard frequency == 0 else { return frequency }
       left - right
     })
-    for symbol in captured[scope] {
-      let slot = self.symbols[symbol].name_slot
-      guard slot >= 0 else { continue }
-      blocked[slot] = scope
+    if captured[scope] is Some(capture_set) {
+      for symbol in capture_set {
+        let slot = self.symbols[symbol].name_slot
+        guard slot >= 0 else { continue }
+        blocked[slot] = scope
+      }
     }
     let mut slot = 0
     for index in targets {
@@ -153,15 +157,24 @@ fn Program::assign_symbol_names(
 /// occurrence to its owning scope. Disjoint subtrees may reuse that name.
 fn Program::reserve_capture(
   program : Program,
-  captured : Array[@hashset.HashSet[Int]],
+  captured : Array[@hashset.HashSet[Int]?],
   scope : Int,
   symbol : Int,
 ) -> Unit {
   let binding = program.symbols[symbol]
-  guard (binding.flags & symbol_preserved) == 0 else { return }
+  guard (binding.flags & (SYMBOL_PRESERVED | SYMBOL_ELIDED)) == 0 else {
+    return
+  }
   for current = scope {
     guard current >= 0 && current != binding.scope else { break }
-    guard captured[current].add_and_check(symbol) else { break }
+    let capture_set = if captured[current] is Some(existing) {
+      existing
+    } else {
+      let created = @hashset.HashSet([])
+      captured[current] = Some(created)
+      created
+    }
+    guard capture_set.add_and_check(symbol) else { break }
     continue program.scopes[current].parent
   }
 }

@@ -87,7 +87,7 @@ fn ClassKey::is_static_modifier(
 ///|
 fn Parser::class_static_block(self : Parser) -> Int raise ParseError {
   let outer_scope = self.scope
-  self.scope = self.program.push_scope(outer_scope, scope_function)
+  self.scope = self.program.push_scope(outer_scope, SCOPE_FUNCTION)
   let body = self.block()
   self.scope = outer_scope
   self.program.node(ClassStaticBlock, body, 0, 0, 0)

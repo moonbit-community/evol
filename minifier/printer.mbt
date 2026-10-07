@@ -333,7 +333,7 @@ fn Printer::data_property(self : Printer, property : Node) -> Unit {
   let is_shorthand = property.c == PROPERTY_SHORTHAND
   let expanded_proto = if is_shorthand {
     let reference = self.program.references[self.program.nodes[value].a]
-    reference.name == name_proto && self.is_renamed(reference.symbol)
+    reference.name == NAME_PROTO && self.is_renamed(reference.symbol)
   } else {
     false
   }

@@ -222,7 +222,10 @@ priv struct Symbol {
 }
 
 ///|
-let symbol_preserved : Int = 1
+const SYMBOL_PRESERVED : Int = 1
+
+///|
+const SYMBOL_ELIDED : Int = 2
 
 ///|
 #valtype
@@ -232,28 +235,28 @@ priv struct Scope {
 }
 
 ///|
-let scope_module : Int = 0
+const SCOPE_MODULE : Int = 0
 
 ///|
-let scope_function : Int = 1
+const SCOPE_FUNCTION : Int = 1
 
 ///|
-let scope_block : Int = 2
+const SCOPE_BLOCK : Int = 2
 
 ///|
-let scope_catch : Int = 3
+const SCOPE_CATCH : Int = 3
 
 ///|
-let scope_class : Int = 4
+const SCOPE_CLASS : Int = 4
 
 ///|
-let scope_parameters : Int = 5
+const SCOPE_PARAMETERS : Int = 5
 
 ///|
-let scope_arrow_parameters : Int = 6
+const SCOPE_ARROW_PARAMETERS : Int = 6
 
 ///|
-let scope_transparent : Int = 7
+const SCOPE_TRANSPARENT : Int = 7
 
 ///|
 priv struct Program {
@@ -275,7 +278,7 @@ priv struct Program {
   identifier_ids : IdentifierTable
   mut has_dynamic_scope : Bool
   mut cover_defaults : Int
-  character_counts : Array[Int]
+  character_counts : FixedArray[Int]
   mut alphabet : NameAlphabet
   property_names : Map[Int, String]
   member_names : Map[Int, String]
@@ -303,13 +306,13 @@ fn Program::new(source : String) -> Program {
     identifier_ids: IdentifierTable::new(),
     has_dynamic_scope: false,
     cover_defaults: 0,
-    character_counts: Array::make(ASCII_CHARACTER_COUNT, 0),
+    character_counts: FixedArray::make(ASCII_CHARACTER_COUNT, 0),
     alphabet: { first: NAME_FIRST, rest: NAME_REST, },
     property_names: {},
     member_names: {},
     property_reserved: @hashset.HashSet([]),
   }
-  ignore(program.push_scope(-1, scope_module))
+  ignore(program.push_scope(-1, SCOPE_MODULE))
   program
 }
 
@@ -400,13 +403,13 @@ fn Program::link_symbols(self : Program, left : Int, right : Int) -> Unit {
 }
 
 ///|
-let name_arguments : Int = 0
+const NAME_ARGUMENTS : Int = 0
 
 ///|
-let name_eval : Int = 1
+const NAME_EVAL : Int = 1
 
 ///|
-let name_proto : Int = 2
+const NAME_PROTO : Int = 2
 
 ///|
 /// Intern source views without copying ordinary identifiers on each reference.

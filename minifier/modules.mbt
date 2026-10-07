@@ -235,7 +235,7 @@ fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
       let symbol = self.program.references[node.a].symbol
       self.program.symbols[symbol] = {
         ..self.program.symbols[symbol],
-        flags: symbol_preserved,
+        flags: SYMBOL_PRESERVED,
       }
     }
     PatternArray | PatternObject =>
@@ -261,7 +261,7 @@ fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
       let symbol = self.program.references[reference].symbol
       self.program.symbols[symbol] = {
         ..self.program.symbols[symbol],
-        flags: symbol_preserved,
+        flags: SYMBOL_PRESERVED,
       }
     }
     _ => ()

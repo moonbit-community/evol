@@ -13,7 +13,8 @@ priv struct Parenthesized {
 fn Parser::parenthesized(self : Parser) -> Parenthesized raise ParseError {
   let outer_scope = self.scope
   let parameter_scope = self.program.push_scope(
-    outer_scope, scope_arrow_parameters,
+    outer_scope,
+    SCOPE_ARROW_PARAMETERS,
   )
   self.scope = parameter_scope
   self.expect(LeftParenthesis)
@@ -244,7 +245,7 @@ fn Parser::collapse_parenthesized_scope(
   let scope = self.program.scopes[expression.parameter_scope]
   self.program.scopes[expression.parameter_scope] = {
     ..scope,
-    kind: scope_transparent,
+    kind: SCOPE_TRANSPARENT,
   }
   self.scope = expression.outer_scope
 }

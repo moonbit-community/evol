@@ -25,7 +25,7 @@ fn Program::collapse_transparent_scopes(self : Program) -> Unit {
   for index in 0..<self.scopes.length() {
     let scope = self.scopes[index]
     guard scope.parent >= 0 &&
-      self.scopes[scope.parent].kind == scope_transparent else {
+      self.scopes[scope.parent].kind == SCOPE_TRANSPARENT else {
       continue
     }
     self.scopes[index] = { ..scope, parent: self.scopes[scope.parent].parent, }
@@ -34,7 +34,7 @@ fn Program::collapse_transparent_scopes(self : Program) -> Unit {
 
 ///|
 fn Program::reference_scope(self : Program, scope : Int) -> Int {
-  guard self.scopes[scope].kind == scope_transparent else { return scope }
+  guard self.scopes[scope].kind == SCOPE_TRANSPARENT else { return scope }
   self.scopes[scope].parent
 }
 
@@ -47,7 +47,7 @@ fn Program::find_binding(self : Program, start_scope : Int, name : Int) -> Int {
       break binding
     }
     // Ordinary functions introduce arguments; arrows inherit it.
-    guard name != name_arguments || environment.kind != scope_parameters else {
+    guard name != NAME_ARGUMENTS || environment.kind != SCOPE_PARAMETERS else {
       break -1
     }
     continue environment.parent

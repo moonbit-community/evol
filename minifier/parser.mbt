@@ -92,10 +92,10 @@ fn Parser::peek_is_keyword(
 
 ///|
 fn Parser::nearest_var_scope(self : Parser) -> Int {
-  // Parsing scopes form a tree rooted at scope_module.
+  // Parsing scopes form a tree rooted at the module scope.
   for scope = self.scope {
     let kind = self.program.scopes[scope].kind
-    guard kind != scope_module && kind != scope_function else { break scope }
+    guard kind != SCOPE_MODULE && kind != SCOPE_FUNCTION else { break scope }
     continue self.program.scopes[scope].parent
   }
 }
@@ -128,7 +128,7 @@ fn Parser::declare_symbol(
   // A var initializer writes through a same-name catch binding.
   let mut scope = self.scope
   while scope != scope_id && scope >= 0 {
-    if self.program.scopes[scope].kind == scope_catch &&
+    if self.program.scopes[scope].kind == SCOPE_CATCH &&
       self.program.scope_members[scope].get(name) is Some(caught) {
       self.program.link_symbols(symbol, caught)
     }
@@ -424,7 +424,7 @@ fn Parser::eat_semicolon(self : Parser) -> Unit raise ParseError {
 fn Parser::block(self : Parser) -> Int raise ParseError {
   self.expect(LeftBrace)
   let outer_scope = self.scope
-  self.scope = self.program.push_scope(outer_scope, scope_block)
+  self.scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
   let statements = self.statements(false)
   self.scope = outer_scope
   self.expect(RightBrace)
@@ -487,7 +487,7 @@ fn Parser::parse_for(self : Parser) -> Int raise ParseError {
   }
   self.expect(LeftParenthesis)
   let outer_scope = self.scope
-  self.scope = self.program.push_scope(outer_scope, scope_block)
+  self.scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
   let (initializer, is_declaration) = self.for_initializer()
   match self.lexer.token {
     Identifier if self.lexer.keyword == Keyword::Of => {
@@ -700,7 +700,7 @@ fn Parser::parse_switch(self : Parser) -> Int raise ParseError {
   self.expect(RightParenthesis)
   self.expect(LeftBrace)
   let outer_scope = self.scope
-  self.scope = self.program.push_scope(outer_scope, scope_block)
+  self.scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
   let cases = self.begin_edges()
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
     cases.push(self.switch_case())
@@ -771,7 +771,7 @@ fn Parser::parse_try(self : Parser) -> Int raise ParseError {
 fn Parser::catch_clause(self : Parser) -> Int raise ParseError {
   self.advance()
   let outer_scope = self.scope
-  self.scope = self.program.push_scope(outer_scope, scope_catch)
+  self.scope = self.program.push_scope(outer_scope, SCOPE_CATCH)
   let parameter = if self.eat(LeftParenthesis) {
     let pattern = self.pattern(self.scope, false)
     self.expect(RightParenthesis)
@@ -798,7 +798,7 @@ fn Parser::function(
     self.advance()
     if is_declaration {
       name_reference = self.declare_symbol(self.scope, name_start, name_end)
-      if self.program.scopes[self.scope].kind == scope_block {
+      if self.program.scopes[self.scope].kind == SCOPE_BLOCK {
         // Sloppy-mode block functions can also expose an Annex B var binding.
         self.program.preserved_names[self.program.identifier(
           name_start, name_end,
@@ -843,7 +843,7 @@ fn Parser::function_tail(
   } else {
     outer_scope
   }
-  let function_scope = self.program.push_scope(parent, scope_parameters)
+  let function_scope = self.program.push_scope(parent, SCOPE_PARAMETERS)
   self.scope = function_scope
   let parameters = self.function_parameters(function_scope)
   let body = self.function_body()
@@ -866,7 +866,7 @@ fn Parser::function_name_scope(
   name_reference : Int,
   outer_scope : Int,
 ) -> Int raise ParseError {
-  let name_scope = self.program.push_scope(outer_scope, scope_block)
+  let name_scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
   let reference = self.program.references[name_reference]
   let symbol = self.program.add_symbol(
     reference.name_start,
@@ -937,7 +937,7 @@ fn Parser::enter_class_scope(
   name_reference : Int,
   is_declaration : Bool,
 ) -> Unit raise ParseError {
-  let class_scope = self.program.push_scope(self.scope, scope_class)
+  let class_scope = self.program.push_scope(self.scope, SCOPE_CLASS)
   self.scope = class_scope
   let has_inner_name = !is_declaration && name_reference >= 0
   guard has_inner_name else { return }
@@ -1324,7 +1324,7 @@ fn Parser::mark_direct_eval(self : Parser, expression : Int) -> Unit {
     continue node.a
   }
   guard callee.kind == Identifier &&
-    self.program.references[callee.a].name == name_eval else {
+    self.program.references[callee.a].name == NAME_EVAL else {
     return
   }
   self.program.has_dynamic_scope = true
@@ -1519,7 +1519,8 @@ fn Parser::single_arrow(
   let saved_generator = self.in_generator
   self.in_generator = false
   let function_scope = self.program.push_scope(
-    outer_scope, scope_arrow_parameters,
+    outer_scope,
+    SCOPE_ARROW_PARAMETERS,
   )
   self.scope = function_scope
   guard !self.lexer.newline_before else {
@@ -1739,7 +1740,7 @@ fn Parser::function_body(self : Parser) -> Int raise ParseError {
   let parameters = self.scope
   let saved_allow_in = self.allow_in
   self.allow_in = true
-  let body_scope = self.program.push_scope(parameters, scope_function)
+  let body_scope = self.program.push_scope(parameters, SCOPE_FUNCTION)
   for name, symbol in self.program.scope_members[parameters] {
     self.program.scope_members[body_scope][name] = symbol
   }
