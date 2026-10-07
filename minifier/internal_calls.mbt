@@ -56,11 +56,11 @@ fn InternalCalls::collect_node(
       for index in 0..<node.c {
         let declaration = program.nodes[program.edges[node.b + index]]
         let pattern = program.nodes[declaration.a]
-        guard pattern.kind == PatternIdentifier && declaration.b >= 0 else {
+        guard pattern.kind is PatternIdentifier && declaration.b >= 0 else {
           continue
         }
         let value = program.nodes[program.unwrapped_expression(declaration.b)]
-        guard value.kind == FunctionExpression || value.kind == ArrowExpression else {
+        guard value.kind is (FunctionExpression | ArrowExpression) else {
           continue
         }
         // A named expression has another binding for its own function object.
@@ -81,7 +81,7 @@ fn InternalCalls::finish(self : InternalCalls) -> Unit {
   for statement in program.modules {
     guard statement is ExportDefault(body) else { continue }
     let declaration = program.nodes[body]
-    guard declaration.kind == FunctionDeclaration else { continue }
+    guard declaration.kind is FunctionDeclaration else { continue }
     let name = program.functions[declaration.a].name
     guard name >= 0 else { continue }
     self.functions[program.references[name].symbol] = -1
@@ -117,12 +117,12 @@ fn InternalCalls::register_function(
 ///|
 fn Program::has_strict_directive(self : Program, id : Int) -> Bool {
   let body = self.nodes[id]
-  guard body.kind == Block else { return false }
+  guard body.kind is Block else { return false }
   for index in 0..<body.b {
     let statement = self.nodes[self.edges[body.a + index]]
-    guard statement.kind == ExpressionStatement else { return false }
+    guard statement.kind is ExpressionStatement else { return false }
     let value = self.nodes[statement.a]
-    guard value.kind == StringLiteral else { return false }
+    guard value.kind is StringLiteral else { return false }
     let spelling = self.source[value.a:value.b]
     if spelling == "\"use strict\"" || spelling == "'use strict'" {
       return true
@@ -139,7 +139,7 @@ fn InternalCalls::collect_call(
 ) -> Unit {
   let program = self.program
   let callee = program.nodes[program.unwrapped_expression(call.a)]
-  guard callee.kind == Identifier else { return }
+  guard callee.kind is Identifier else { return }
   let symbol = program.references[callee.a].symbol
   guard symbol >= 0 else { return }
   self.direct_uses[symbol] += 1
@@ -178,12 +178,11 @@ fn InternalCalls::ignores_argument_count(
   for index in 0..<function.parameters_count {
     let parameter = program.nodes[program.edges[function.parameters_offset +
       index]]
-    let binding = if parameter.kind == PatternDefault {
+    let binding = {
+      guard parameter.kind is PatternDefault else { parameter }
       program.nodes[parameter.a]
-    } else {
-      parameter
     }
-    guard binding.kind == PatternIdentifier else { return false }
+    guard binding.kind is PatternIdentifier else { return false }
     parameter_scope = program.references[binding.a].scope
   }
   is_arrow ||
@@ -203,7 +202,7 @@ fn InternalCalls::trim_call(self : InternalCalls, id : Int) -> Unit {
     return
   }
   for index in 0..<call.c {
-    guard program.nodes[program.edges[call.b + index]].kind != Spread else {
+    guard !(program.nodes[program.edges[call.b + index]].kind is Spread) else {
       return
     }
   }

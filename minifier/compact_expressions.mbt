@@ -3,7 +3,7 @@ fn Program::unwrapped_expression(self : Program, id : Int) -> Int {
   for expression = id {
     guard expression >= 0 else { break expression }
     let node = self.nodes[expression]
-    guard node.kind == Parenthesized else { break expression }
+    guard node.kind is Parenthesized else { break expression }
     continue node.a
   }
 }
@@ -14,7 +14,7 @@ fn Program::is_undefined_value(self : Program, id : Int) -> Bool {
   let expression = self.unwrapped_expression(id)
   guard expression >= 0 else { return false }
   let node = self.nodes[expression]
-  guard node.kind == Identifier else { return false }
+  guard node.kind is Identifier else { return false }
   let reference = self.references[node.a]
   reference.symbol < 0 && self.names[reference.name] == "undefined"
 }
@@ -23,14 +23,14 @@ fn Program::is_undefined_value(self : Program, id : Int) -> Bool {
 fn Program::is_number_literal(self : Program, id : Int) -> Bool {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
-  node.kind == NumberLiteral && self.source[node.b - 1] != 'n'
+  node.kind is NumberLiteral && self.source[node.b - 1] != 'n'
 }
 
 ///|
 fn Program::is_zero_literal(self : Program, id : Int) -> Bool {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
-  node.kind == NumberLiteral &&
+  node.kind is NumberLiteral &&
   node.b - node.a == 1 &&
   self.source[node.a] == '0'
 }
@@ -41,7 +41,7 @@ fn Program::is_zero_literal(self : Program, id : Int) -> Bool {
 fn Program::is_positive_shift_count(self : Program, id : Int) -> Bool {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
-  guard node.kind == NumberLiteral else { return false }
+  guard node.kind is NumberLiteral else { return false }
   let length = node.b - node.a
   let first_digit = self.source[node.a]
   match length {
@@ -63,7 +63,7 @@ fn Program::is_positive_shift_count(self : Program, id : Int) -> Bool {
 fn Program::has_signed_number_result(self : Program, id : Int) -> Bool {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
-  guard node.kind == Binary else { return false }
+  guard node.kind is Binary else { return false }
   match self.operators[node.a] {
     UnsignedShiftRight => self.is_positive_shift_count(node.c)
     ShiftLeft | ShiftRight | BitwiseAnd | BitwiseOr | BitwiseXor =>
@@ -79,23 +79,18 @@ fn Program::has_signed_number_result(self : Program, id : Int) -> Bool {
 fn Program::compact_expression(self : Program, id : Int) -> Unit {
   let node = self.nodes[id]
   match node.kind {
-    Return =>
-      if self.is_undefined_value(node.a) {
-        self.nodes[id] = { ..node, a: -1, }
-      }
-    Binary =>
-      if self.operators[node.a] == BitwiseOr &&
-        self.is_zero_literal(node.c) &&
-        self.has_signed_number_result(node.b) {
-        // Preserve explicit parentheses: the printer keeps the parser's
-        // grouping instead of reconstructing precedence from changed nodes.
-        self.nodes[id] = self.nodes[node.b]
-      }
+    Return if self.is_undefined_value(node.a) =>
+      self.nodes[id] = { ..node, a: -1, }
+    Binary if self.operators[node.a] is BitwiseOr &&
+      self.is_zero_literal(node.c) &&
+      self.has_signed_number_result(node.b) =>
+      // Preserve explicit parentheses: the printer keeps the parser's
+      // grouping instead of reconstructing precedence from changed nodes.
+      self.nodes[id] = self.nodes[node.b]
     While => {
       let condition = self.nodes[self.unwrapped_expression(node.a)]
-      if condition.kind == BooleanLiteral && condition.a == 1 {
-        self.nodes[id] = Node::new(For, -1, -1, -1, node.b)
-      }
+      guard condition.kind is BooleanLiteral && condition.a == 1 else { return }
+      self.nodes[id] = Node::new(For, -1, -1, -1, node.b)
     }
     _ => ()
   }
@@ -106,8 +101,8 @@ fn Program::remove_final_unit_return(self : Program, function_id : Int) -> Unit 
   let function = self.functions[function_id]
   guard (function.flags & FUNCTION_EXPRESSION_BODY) == 0 else { return }
   let body = self.nodes[function.body]
-  guard body.kind == Block && body.b > 0 else { return }
+  guard body.kind is Block && body.b > 0 else { return }
   let last = self.nodes[self.edges[body.a + body.b - 1]]
-  guard last.kind == Return && last.a < 0 else { return }
+  guard last.kind is Return && last.a < 0 else { return }
   self.nodes[function.body] = { ..body, b: body.b - 1, }
 }

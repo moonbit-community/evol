@@ -17,20 +17,24 @@ priv struct IdentifierTable {
 ///|
 fn IdentifierTable::new() -> IdentifierTable {
   let table : IdentifierTable = { entries: [], slots: Array::make(16, -1), }
-  table.insert("arguments", name_arguments)
-  table.insert("eval", name_eval)
-  table.insert("__proto__", name_proto)
+  table.insert("arguments", NAME_ARGUMENTS)
+  table.insert("eval", NAME_EVAL)
+  table.insert("__proto__", NAME_PROTO)
   table
 }
 
 ///|
+const FNV_OFFSET : UInt = 2166136261U
+
+///|
+const FNV_PRIME : UInt = 16777619U
+
+///|
 /// FNV-1a over UTF-16 code units. Equality still compares the full spelling.
 fn identifier_hash(spelling : StringView) -> Int {
-  let fnv_offset : UInt = 2166136261U
-  let fnv_prime : UInt = 16777619U
-  let mut hash = fnv_offset
+  let mut hash = FNV_OFFSET
   for index in 0..<spelling.length() {
-    hash = (hash ^ spelling[index].to_uint()) * fnv_prime
+    hash = (hash ^ spelling[index].to_uint()) * FNV_PRIME
   }
   hash.reinterpret_as_int()
 }
