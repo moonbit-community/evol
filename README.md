@@ -1,4 +1,4 @@
-# evol
+<img src="./evol.svg" title="evol" width=200 />
 
 A JavaScript mangler/compressor for MoonBit, built for the MoonBit JS backend.
 
