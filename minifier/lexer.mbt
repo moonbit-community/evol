@@ -164,7 +164,7 @@ fn Lexer::finish_identifier(
   self : Lexer,
   rest : StringView,
 ) -> Unit raise ParseError {
-  guard rest.length() == 0 || rest.get_char(0) is Some(_) else {
+  guard rest.length() == 0 || rest[0] <= '\u007F' || rest.get_char(0) is Some(_) else {
     self.position = rest.start_offset()
     return self.identifier_tail(self.start)
   }
@@ -301,15 +301,27 @@ fn Lexer::number_token(self : Lexer) -> Unit {
 }
 
 ///|
+let ascii_identifier_characters : FixedArray[Bool] = FixedArray::makei(
+  ASCII_CHARACTER_COUNT,
+  code_unit => {
+    match code_unit.to_char().unwrap() {
+      'A'..='Z' | 'a'..='z' | '0'..='9' | '_' | '$' | '#' => true
+      _ => false
+    }
+  },
+)
+
+///|
 fn ascii_identifier_rest(input : StringView) -> StringView {
   // position is the first unread UTF-16 code unit within input.
   let end = for position = 0 {
     guard position < input.length() else { break position }
-    match input[position] {
-      'A'..='Z' | 'a'..='z' | '0'..='9' | '_' | '$' | '#' =>
-        continue position + 1
-      _ => break position
+    let character = input[position].to_int()
+    guard character < ASCII_CHARACTER_COUNT &&
+      ascii_identifier_characters[character] else {
+      break position
     }
+    continue position + 1
   }
   input.view(start_offset=end)
 }
@@ -322,6 +334,11 @@ fn Lexer::identifier_token(
   // MoonBit's generated names have long ASCII runs. Scan those directly, then
   // handle names that continue through an escape or a non-ASCII character.
   let rest = ascii_identifier_rest(tail)
+  // The ASCII scan already consumed every ordinary continuation character.
+  // Only an escape or a non-ASCII code unit can extend the name here.
+  if rest.length() == 0 || (rest[0] <= '\u007F' && rest[0] != '\\') {
+    return self.finish_identifier(rest)
+  }
   lexmatch rest {
     (re"^\\" | re"^" + RAW_IDENTIFIER_START, after=_) => {
       self.position = rest.start_offset()

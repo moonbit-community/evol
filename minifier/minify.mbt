@@ -25,6 +25,7 @@ pub fn minify_with(
   let program = Program::parse(source)
   program.resolve()
   program.compact_patterns(rename_top_level)
+  program.pool_literals(rename_top_level)
   program.prepare_properties(internal_properties)
   program.mangle(rename_top_level)
   program.mangle_properties()

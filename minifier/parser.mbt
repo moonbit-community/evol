@@ -6,6 +6,7 @@ priv struct Parser {
   mut scope : Int
   mut allow_in : Bool
   mut in_generator : Bool
+  mut long_value_literal_count : Int
 }
 
 ///|
@@ -17,6 +18,7 @@ fn Parser::new(source : String) -> Parser {
     scope: 0,
     allow_in: true,
     in_generator: false,
+    long_value_literal_count: 0,
   }
 }
 
@@ -43,13 +45,26 @@ fn Parser::syntax_error(self : Parser, message : String) -> ParseError {
 
 ///|
 fn Parser::advance(self : Parser) -> Unit raise ParseError {
-  count_characters(
-    self.program.source,
-    self.lexer.start,
-    self.lexer.end,
-    self.program.character_counts,
-    1,
-  )
+  let contributes_name_characters = match self.lexer.token {
+    Identifier => self.lexer.keyword != NotKeyword
+    Number
+    | StringLiteral
+    | Regex
+    | TemplateNoSubstitution
+    | TemplateHead
+    | TemplateMiddle
+    | TemplateTail => true
+    _ => false
+  }
+  if contributes_name_characters {
+    count_characters(
+      self.program.source,
+      self.lexer.start,
+      self.lexer.end,
+      self.program.character_counts,
+      1,
+    )
+  }
   self.lexer.next()
 }
 
@@ -424,12 +439,16 @@ fn Parser::eat_semicolon(self : Parser) -> Unit raise ParseError {
 fn Parser::block(self : Parser) -> Int raise ParseError {
   self.expect(LeftBrace)
   let outer_scope = self.scope
-  self.scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
+  let block_scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
+  self.scope = block_scope
+  let literals_before = self.long_value_literal_count
   let statements = self.statements(false)
   self.scope = outer_scope
   self.expect(RightBrace)
   let { offset, count, } = self.program.edge_list(statements)
-  self.program.node(Block, offset, count, 0, 0)
+  // Keep the execution scope and a cheap summary for literal pooling.
+  let long_literals = self.long_value_literal_count - literals_before
+  self.program.node(Block, offset, count, block_scope, long_literals)
 }
 
 ///|
@@ -700,7 +719,8 @@ fn Parser::parse_switch(self : Parser) -> Int raise ParseError {
   self.expect(RightParenthesis)
   self.expect(LeftBrace)
   let outer_scope = self.scope
-  self.scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
+  let switch_scope = self.program.push_scope(outer_scope, SCOPE_SWITCH)
+  self.scope = switch_scope
   let cases = self.begin_edges()
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
     cases.push(self.switch_case())
@@ -710,7 +730,13 @@ fn Parser::parse_switch(self : Parser) -> Int raise ParseError {
   let { offset: cases_offset, count: cases_count, } = self.program.edge_list(
     cases,
   )
-  self.program.node(Switch, discriminant, cases_offset, cases_count, 0)
+  self.program.node(
+    Switch,
+    discriminant,
+    cases_offset,
+    cases_count,
+    switch_scope,
+  )
 }
 
 ///|
@@ -798,7 +824,7 @@ fn Parser::function(
     self.advance()
     if is_declaration {
       name_reference = self.declare_symbol(self.scope, name_start, name_end)
-      if self.program.scopes[self.scope].kind == SCOPE_BLOCK {
+      if self.program.scopes[self.scope].kind is (SCOPE_BLOCK | SCOPE_SWITCH) {
         // Sloppy-mode block functions can also expose an Annex B var binding.
         self.program.preserved_names[self.program.identifier(
           name_start, name_end,
@@ -1351,8 +1377,8 @@ fn Parser::arguments(self : Parser) -> EdgeRange raise ParseError {
 ///|
 fn Parser::primary(self : Parser) -> Int raise ParseError {
   match self.lexer.token {
-    Number => self.source_literal(NumberLiteral)
-    StringLiteral => self.source_literal(StringLiteral)
+    Number => self.value_literal(NumberLiteral)
+    StringLiteral => self.value_literal(StringLiteral)
     Slash | DivisionAssignment | Regex => {
       if self.lexer.token != Regex {
         self.lexer.position = self.lexer.start
@@ -1367,6 +1393,19 @@ fn Parser::primary(self : Parser) -> Int raise ParseError {
     Identifier => self.identifier()
     _ => raise self.unexpected("expression")
   }
+}
+
+///|
+/// Property keys also use source_literal; only expression values contribute
+/// to the block summary used by the literal pool.
+fn Parser::value_literal(
+  self : Parser,
+  kind : NodeKind,
+) -> Int raise ParseError {
+  if self.lexer.end - self.lexer.start >= MIN_POOLED_LITERAL_LENGTH {
+    self.long_value_literal_count += 1
+  }
+  self.source_literal(kind)
 }
 
 ///|
@@ -1746,12 +1785,14 @@ fn Parser::function_body(self : Parser) -> Int raise ParseError {
   }
   self.scope = body_scope
   self.expect(LeftBrace)
+  let literals_before = self.long_value_literal_count
   let statements = self.statements(false)
   self.expect(RightBrace)
   self.scope = parameters
   self.allow_in = saved_allow_in
   let { offset, count, } = self.program.edge_list(statements)
-  self.program.node(Block, offset, count, 0, 0)
+  let long_literals = self.long_value_literal_count - literals_before
+  self.program.node(Block, offset, count, body_scope, long_literals)
 }
 
 ///|

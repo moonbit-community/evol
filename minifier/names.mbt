@@ -63,39 +63,65 @@ fn Program::name_alphabet(program : Program) -> NameAlphabet {
 ///|
 fn Program::unchanged_character_counts(program : Program) -> FixedArray[Int] {
   let counts = program.character_counts.copy()
-  // One bit per UTF-16 source position, shared by references and property keys.
-  let counted_removals = FixedArray::make(program.source.length() / 32 + 1, 0U)
-  let subtract_name = (start, end) => {
-    guard mark_removed_position(counted_removals, start) else { return }
-    count_characters(program.source, start, end, counts, -1)
+  // A source token may represent both a shorthand key and a reference.
+  // Decide removals first, then count each remaining deferred spelling once.
+  let accounted_positions = FixedArray::make(
+    program.source.length() / 32 + 1,
+    0U,
+  )
+  let remove_name = (start, end) => {
+    guard mark_position(accounted_positions, start) else { return }
+    if !deferred_identifier_span(program.source, start, end) {
+      count_characters(program.source, start, end, counts, -1)
+    }
   }
   for reference in program.references {
-    guard reference.symbol >= 0 &&
-      (program.symbols[reference.symbol].flags & SYMBOL_PRESERVED) == 0 else {
-      continue
+    if reference.symbol >= 0 &&
+      (program.symbols[reference.symbol].flags & SYMBOL_PRESERVED) == 0 {
+      remove_name(reference.name_start, reference.name_end)
     }
-    subtract_name(reference.name_start, reference.name_end)
-  }
-  for node in program.nodes {
-    guard (node.kind == Labeled || node.kind == Break || node.kind == Continue) &&
-      node.a >= 0 else {
-      continue
-    }
-    subtract_name(node.a, node.b)
   }
   for id, _ in program.property_names {
     let node = program.nodes[program.property_leaf(id)]
-    subtract_name(node.a, node.b)
+    remove_name(node.a, node.b)
   }
   for id, _ in program.member_names {
     let node = program.nodes[id]
-    subtract_name(node.b, node.c)
+    remove_name(node.b, node.c)
+  }
+  let retain_name = (start, end) => {
+    guard mark_position(accounted_positions, start) &&
+      deferred_identifier_span(program.source, start, end) else {
+      return
+    }
+    count_characters(program.source, start, end, counts, 1)
+  }
+  for node in program.nodes {
+    match node.kind {
+      Labeled | Break | Continue if node.a >= 0 => remove_name(node.a, node.b)
+      Member => retain_name(node.b, node.c)
+      StringLiteral => retain_name(node.a, node.b)
+      _ => ()
+    }
+  }
+  for reference in program.references {
+    retain_name(reference.name_start, reference.name_end)
   }
   counts
 }
 
 ///|
-fn mark_removed_position(positions : FixedArray[UInt], start : Int) -> Bool {
+fn deferred_identifier_span(source : String, start : Int, end : Int) -> Bool {
+  guard start < end else { return false }
+  match source[start] {
+    '\'' | '"' | '`' | '#' | '.' | '0'..='9' => false
+    _ =>
+      keyword_of(source.view(start_offset=start, end_offset=end)) is NotKeyword
+  }
+}
+
+///|
+fn mark_position(positions : FixedArray[UInt], start : Int) -> Bool {
   let word_index = start / 32
   let position_mask = 1U << (start % 32)
   let word = positions[word_index]

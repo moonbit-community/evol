@@ -96,6 +96,52 @@ fn shortened_exponent_spelling(
 }
 
 ///|
+fn compact_decimal_spelling(text : String) -> String {
+  let end = text.length()
+  guard decimal_spelling(text, 0, end) is Some(decimal) else { return text }
+  if decimal.exponent_marker < end {
+    return shortened_exponent_spelling(text, 0, end, decimal).unwrap_or(text)
+  }
+  if decimal.is_integer {
+    return integer_exponent_spelling(text, 0, end).unwrap_or(text)
+  }
+  text[decimal.mantissa_start:end].to_owned()
+}
+
+///|
+/// Formatting is restricted to ordinary decimal fractions. A second parse
+/// checks the complete binary64 value, including the sign bit of zero.
+fn shortened_decimal_value(spelling : StringView) -> String? {
+  guard spelling =~ re"^(?:(?:0|[1-9][0-9]*)\.[0-9]*|\.[0-9]+)(?:[eE][+\-]?[0-9]+)?$" else {
+    return None
+  }
+  let value = @string.parse_double(spelling) catch { _ => return None }
+  guard !value.is_inf() && !value.is_nan() else { return None }
+  let shortened = compact_decimal_spelling(value.to_string())
+  guard shortened.length() < spelling.length() else { return None }
+  let reparsed = @string.parse_double(shortened[:]) catch { _ => return None }
+  guard reparsed.reinterpret_as_uint64() == value.reinterpret_as_uint64() else {
+    return None
+  }
+  Some(shortened)
+}
+
+///|
+fn Printer::shortened_decimal_value(
+  self : Printer,
+  start : Int,
+  end : Int,
+) -> String? {
+  let spelling = self.program.source[start:end]
+  guard self.decimal_spellings.get(spelling) is Some(cached) else {
+    let shortened = shortened_decimal_value(spelling)
+    self.decimal_spellings[spelling] = shortened
+    return shortened
+  }
+  cached
+}
+
+///|
 /// Only rewrite decimal spellings whose numeric value is unchanged exactly.
 fn Printer::number(self : Printer, start : Int, end : Int) -> Unit {
   // No supported numeric rewrite can shorten a one- or two-character spelling.
@@ -104,6 +150,13 @@ fn Printer::number(self : Printer, start : Int, end : Int) -> Unit {
   guard decimal_spelling(source, start, end) is Some(decimal) else {
     self.span(start, end, true)
     return
+  }
+  // Long fractions commonly repeat in generated drawing code. Cache both
+  // successful and unsuccessful conversions; short literals keep the fast path.
+  if end - start >= 16 &&
+    !decimal.is_integer &&
+    self.shortened_decimal_value(start, end) is Some(text) {
+    return self.text(text, true)
   }
   guard decimal.exponent_marker != end else {
     // BigInt and other bases were excluded by the decimal scan.

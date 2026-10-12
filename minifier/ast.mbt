@@ -2,6 +2,7 @@
 priv enum NodeKind {
   Identifier
   NumberLiteral
+  ZeroLiteral
   StringLiteral
   RegexLiteral
   TemplateNoSubstitution
@@ -39,6 +40,7 @@ priv enum NodeKind {
   Sequence
   Spread
   Parenthesized
+  EvaluatedValue
   ExpressionStatement
   Block
   VariableDeclaration
@@ -60,6 +62,7 @@ priv enum NodeKind {
   Catch
   Debugger
   Empty
+  Elided
   With
   Method
   ClassField
@@ -259,6 +262,9 @@ const SCOPE_ARROW_PARAMETERS : Int = 6
 const SCOPE_TRANSPARENT : Int = 7
 
 ///|
+const SCOPE_SWITCH : Int = 8
+
+///|
 priv struct Program {
   source : String
   nodes : Array[Node]
@@ -301,7 +307,7 @@ fn Program::new(source : String) -> Program {
     modules: [],
     root: -1,
     preserved_names: {},
-    names: ["arguments", "eval", "__proto__"],
+    names: ["arguments", "eval", "__proto__", "undefined"],
     generated_names: [],
     identifier_ids: IdentifierTable::new(),
     has_dynamic_scope: false,
@@ -412,6 +418,9 @@ const NAME_EVAL : Int = 1
 const NAME_PROTO : Int = 2
 
 ///|
+const NAME_UNDEFINED : Int = 3
+
+///|
 /// Intern source views without copying ordinary identifiers on each reference.
 /// Escaped spellings and literal spellings share the same canonical identity.
 fn Program::identifier(
@@ -420,8 +429,9 @@ fn Program::identifier(
   end : Int,
 ) -> Int raise ParseError {
   let spelling = self.source[start:end]
-  guard self.identifier_ids.get(spelling) is Some(id) else {
-    return self.intern_identifier(spelling)
+  let hash = identifier_hash(spelling)
+  guard self.identifier_ids.get_hashed(spelling, hash) is Some(id) else {
+    return self.intern_identifier(spelling, hash)
   }
   id
 }
@@ -430,6 +440,7 @@ fn Program::identifier(
 fn Program::intern_identifier(
   self : Program,
   spelling : StringView,
+  hash : Int,
 ) -> Int raise ParseError {
   let start = spelling.start_offset()
   let end = start + spelling.length()
@@ -447,13 +458,13 @@ fn Program::intern_identifier(
   guard canonical_id is Some(id) else {
     let id = self.names.length()
     self.names.push(name)
-    self.identifier_ids.insert(spelling, id)
+    self.identifier_ids.insert_hashed(spelling, hash, id)
     if escaped {
       self.identifier_ids.insert(name[:], id)
     }
     return id
   }
-  self.identifier_ids.insert(spelling, id)
+  self.identifier_ids.insert_hashed(spelling, hash, id)
   id
 }
 

@@ -10,8 +10,6 @@ This repository is a MoonBit workspace with two modules:
 - [`evol/`](./evol) — the `moonbit-community/evol` command-line program: read
   a file (or stdin) and write the minified result.
 
-`evol` removes unnecessary whitespace and shortens identifier names.
-
 The CLI exits with a nonzero status on input or argument errors. `--help` and `--version` exit successfully.
 
 ## CLI options

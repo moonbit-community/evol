@@ -2,13 +2,20 @@
 fn Program::compact_patterns(self : Program, rename_top_level : Bool) -> Unit {
   guard !self.has_dynamic_scope else { return }
   let calls = InternalCalls::new(self, rename_top_level)
+  let bindings = ValueBindings::new(self, rename_top_level)
+  bindings.inline_aliases(rename_top_level)
+  bindings.inline_data_values(rename_top_level)
   // Parser arena order places statements after their children. New expression
   // nodes are already simplified when created and need no second traversal.
   let parsed_nodes = self.nodes.length()
   for id in 0..<parsed_nodes {
     let node = self.nodes[id]
     match node.kind {
-      Identifier | VariableDeclaration | Call => calls.collect_node(id, node)
+      Identifier | VariableDeclaration => calls.collect_node(id, node)
+      Call => {
+        calls.collect_node(id, node)
+        bindings.inline_trivial_call(id, rename_top_level)
+      }
       FunctionDeclaration => {
         calls.collect_node(id, node)
         self.remove_final_unit_return(node.a)
@@ -16,24 +23,40 @@ fn Program::compact_patterns(self : Program, rename_top_level : Bool) -> Unit {
       FunctionExpression | ArrowExpression =>
         self.remove_final_unit_return(node.a)
       Method => self.remove_final_unit_return(node.b)
-      Return | Binary => self.compact_expression(id)
+      Return | Binary | Unary | Conditional => self.compact_expression(id)
+      Parenthesized => self.compact_parenthesized(id)
       Block => {
-        let count = self.compact_result_slots(node.a, node.b)
+        let live = self.live_statements(node.a, node.b)
+        let slots = self.compact_result_slots(node.a, live, bindings)
+        let count = self.compact_statement_list(node.a, slots, bindings)
         self.nodes[id] = { ..node, b: count, }
       }
       SwitchCase => {
-        let count = self.compact_result_slots(node.b, node.c)
+        let live = self.live_statements(node.b, node.c)
+        let slots = self.compact_result_slots(node.b, live, bindings)
+        let count = self.compact_statement_list(node.b, slots, bindings)
         self.nodes[id] = { ..node, c: count, }
       }
+      If => {
+        self.compact_branch(id)
+        self.compact_unit_branch(id)
+      }
+      Labeled => self.compact_label_exit(id)
+      Switch => self.compact_switch_returns(id)
       While => {
         self.compact_expression(id)
         self.remove_tail_continue(node.b)
+        self.compact_loop_guard(id)
       }
-      For => self.remove_tail_continue(node.d)
+      For => {
+        self.remove_tail_continue(node.d)
+        self.compact_loop_guard(id)
+      }
       _ => ()
     }
   }
   calls.finish()
+  bindings.inline_function_values()
 }
 
 ///|
@@ -79,21 +102,60 @@ fn Program::slot_assignment(
   symbol : Int,
 ) -> Int {
   let node = self.nodes[self.single_statement(statement)]
+  if node.kind is Block && node.b > 0 {
+    for index in 0..<(node.b - 1) {
+      guard self.nodes[self.edges[node.a + index]].kind is ExpressionStatement else {
+        return -1
+      }
+    }
+    return self.slot_assignment(self.edges[node.a + node.b - 1], symbol)
+  }
   guard node.kind is ExpressionStatement else { return -1 }
-  let expression = self.nodes[node.a]
+  let expression = self.nodes[self.sequence_tail(node.a)]
   guard expression.kind is Assignment &&
     self.operators[expression.a] is Operator::Assignment &&
     self.identifier_symbol(expression.b) == symbol else {
     return -1
   }
   let value = self.nodes[self.unwrapped_expression(expression.c)]
-  // Assignment to a result slot supplies the inferred name of an anonymous
-  // function/class. Moving that value into return/condition would lose it.
+  // Function names may change during compression. Keep inferred class names.
   match value.kind {
-    ArrowExpression => -1
-    FunctionExpression if self.functions[value.a].name < 0 => -1
     ClassExpression if self.classes[value.a].name < 0 => -1
     _ => expression.c
+  }
+}
+
+///|
+fn Program::slot_assignment_value(
+  self : Program,
+  statement : Int,
+  symbol : Int,
+) -> Int {
+  let node = self.nodes[self.single_statement(statement)]
+  guard node.kind is Block else {
+    let value = self.slot_assignment(statement, symbol)
+    let tail = self.sequence_tail(node.a)
+    guard tail != self.unwrapped_expression(node.a) else { return value }
+    self.nodes[tail] = self.nodes[value]
+    return node.a
+  }
+  let value = self.slot_assignment_value(
+    self.edges[node.a + node.b - 1],
+    symbol,
+  )
+  for index = node.b - 2, result = value {
+    guard index >= 0 else { break result }
+    let expression = self.nodes[self.edges[node.a + index]].a
+    continue index - 1, self.sequence_pair(expression, result)
+  }
+}
+
+///|
+fn Program::sequence_tail(self : Program, id : Int) -> Int {
+  for expression = self.unwrapped_expression(id) {
+    let node = self.nodes[expression]
+    guard node.kind is Sequence && node.b > 0 else { break expression }
+    continue self.unwrapped_expression(self.edges[node.a + node.b - 1])
   }
 }
 
@@ -117,44 +179,11 @@ fn Program::slot_branch_writes(
 }
 
 ///|
-fn Program::slot_consumer_symbol(self : Program, statement : Int) -> Int {
-  let node = self.nodes[statement]
-  match node.kind {
-    Return | If => self.identifier_symbol(node.a)
-    ExpressionStatement => {
-      let assignment = self.nodes[node.a]
-      // A member LHS can evaluate getters before the RHS. Keep that ordering
-      // by only substituting into assignments to plain resolved bindings.
-      guard assignment.kind is Assignment &&
-        self.operators[assignment.a] is Operator::Assignment &&
-        self.identifier_symbol(assignment.b) >= 0 else {
-        return -1
-      }
-      self.identifier_symbol(assignment.c)
-    }
-    _ => -1
-  }
-}
-
-///|
-fn Program::replace_slot_consumer(
-  self : Program,
-  statement : Int,
-  value : Int,
-) -> Unit {
-  let node = self.nodes[statement]
-  guard node.kind is ExpressionStatement else {
-    self.nodes[statement] = { ..node, a: value, }
-    return
-  }
-  self.nodes[node.a] = { ..self.nodes[node.a], c: value, }
-}
-
-///|
 fn Program::compact_result_slots(
   self : Program,
   offset : Int,
   count : Int,
+  bindings : ValueBindings,
 ) -> Int {
   for read = 0, kept = 0 {
     guard read < count else { break kept }
@@ -164,8 +193,7 @@ fn Program::compact_result_slots(
     guard slot >= 0 && read + 2 < count else { continue read + 1, kept + 1 }
     let producer = self.edges[offset + read + 1]
     let consumer = self.edges[offset + read + 2]
-    guard self.slot_consumer_symbol(consumer) == slot &&
-      self.fold_result_slot(producer, consumer, slot) else {
+    guard self.fold_result_slot(producer, consumer, slot, bindings) else {
       continue read + 1, kept + 1
     }
     let entry = self.symbols[slot]
@@ -184,21 +212,34 @@ fn Program::fold_result_slot(
   producer : Int,
   consumer : Int,
   slot : Int,
+  bindings : ValueBindings,
 ) -> Bool {
   let node = self.nodes[producer]
   guard node.kind is If else {
-    guard node.kind is Switch && self.nodes[consumer].kind is Return else {
+    guard node.kind is Switch &&
+      self.nodes[consumer].kind is Return &&
+      self.identifier_symbol(self.nodes[consumer].a) == slot else {
       return false
     }
     return self.fold_switch_slot(producer, slot)
   }
+  let expression = self.first_statement_expression(consumer)
+  let movement = ValueMovement::new(bindings, slot, producer, -1)
+  let reference = self.leading_value_read(expression, movement)
+  guard reference >= 0 else { return false }
   let writes = self.slot_branch_writes(producer, slot)
   // Account for declaration, all branch writes and this single consumer.
   // Any self-read, closure capture, extra use or extra declaration rejects it.
   guard writes > 0 && self.symbols[slot].use_count == writes + 2 else {
     return false
   }
-  self.replace_slot_consumer(consumer, self.slot_branch_value(producer, slot))
+  let value = self.slot_branch_value(producer, slot)
+  self.nodes[reference] = if reference == expression &&
+    self.nodes[consumer].kind is (Return | Throw | If | Switch) {
+    self.nodes[value]
+  } else {
+    Node::new(Parenthesized, value, 0, 0, 0)
+  }
   true
 }
 
@@ -210,7 +251,7 @@ fn Program::slot_branch_value(
 ) -> Int {
   let id = self.single_statement(statement)
   let node = self.nodes[id]
-  guard node.kind is If else { return self.slot_assignment(id, slot) }
+  guard node.kind is If else { return self.slot_assignment_value(id, slot) }
   let consequent = self.slot_branch_value(node.b, slot)
   let alternative = self.slot_branch_value(node.c, slot)
   self.compact_choice(node.a, consequent, alternative)
@@ -256,14 +297,35 @@ fn Program::compact_choice(
   consequent : Int,
   alternative : Int,
 ) -> Int {
+  let consequent_is_true = self.boolean_literal(consequent, true)
+  let alternative_is_false = self.boolean_literal(alternative, false)
+  let consequent_is_false = self.boolean_literal(consequent, false)
+  let alternative_is_true = self.boolean_literal(alternative, true)
+  if consequent_is_false && alternative_is_true {
+    return self.negated_value(condition)
+  }
+  if consequent_is_true && alternative_is_false {
+    guard !self.is_boolean_value(condition) else { return condition }
+    return self.negated_value(self.negated_value(condition))
+  }
   if self.is_boolean_value(condition) {
-    let consequent_is_true = self.boolean_literal(consequent, true)
-    let alternative_is_false = self.boolean_literal(alternative, false)
     if alternative_is_false {
       guard !consequent_is_true else { return condition }
       return self.slot_logical(Operator::LogicalAnd, condition, consequent)
     } else if consequent_is_true {
       return self.slot_logical(Operator::LogicalOr, condition, alternative)
+    } else if consequent_is_false {
+      return self.slot_logical(
+        Operator::LogicalAnd,
+        self.negated_value(condition),
+        alternative,
+      )
+    } else if alternative_is_true {
+      return self.slot_logical(
+        Operator::LogicalOr,
+        self.negated_value(condition),
+        consequent,
+      )
     }
   }
   let condition_operand = self.slot_operand(condition, ConditionalTest)
@@ -285,8 +347,18 @@ fn Program::slot_operand(
   id : Int,
   context : SlotOperand,
 ) -> Int {
+  guard self.slot_needs_parentheses(id, context) else { return id }
+  self.node(Parenthesized, id, 0, 0, 0)
+}
+
+///|
+fn Program::slot_needs_parentheses(
+  self : Program,
+  id : Int,
+  context : SlotOperand,
+) -> Bool {
   let node = self.nodes[id]
-  let needs_parentheses = match context {
+  match context {
     ConditionalArm => node.kind is Sequence
     ConditionalTest | LogicalOperand(_) =>
       match node.kind {
@@ -300,8 +372,6 @@ fn Program::slot_operand(
         _ => false
       }
   }
-  guard needs_parentheses else { return id }
-  self.node(Parenthesized, id, 0, 0, 0)
 }
 
 ///|
@@ -353,7 +423,7 @@ fn Program::fold_switch_slot(self : Program, id : Int, slot : Int) -> Bool {
     let case_id = self.edges[node.b + index]
     let statements = self.slot_case_statements(case_id)
     let assignment = self.edges[statements.offset]
-    let value = self.slot_assignment(assignment, slot)
+    let value = self.slot_assignment_value(assignment, slot)
     self.nodes[assignment] = Node::new(Return, value, 0, 0, 0)
     self.nodes[case_id] = { ..self.nodes[case_id], b: statements.offset, c: 1, }
   }

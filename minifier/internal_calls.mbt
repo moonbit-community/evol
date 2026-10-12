@@ -193,6 +193,7 @@ fn InternalCalls::ignores_argument_count(
 fn InternalCalls::trim_call(self : InternalCalls, id : Int) -> Unit {
   let program = self.program
   let call = program.nodes[id]
+  guard call.kind is Call else { return }
   let callee = program.nodes[program.unwrapped_expression(call.a)]
   let symbol = program.references[callee.a].symbol
   let function_id = self.functions[symbol]
