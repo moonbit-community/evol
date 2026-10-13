@@ -1,15 +1,15 @@
 ///|
 priv struct DecimalSpelling {
-  mantissa_start : Int
-  exponent_marker : Int
+  mantissa_start : Int32
+  exponent_marker : Int32
   is_integer : Bool
 }
 
 ///|
 fn decimal_spelling(
   source : String,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
 ) -> DecimalSpelling? {
   let spelling = source.view(start_offset=start, end_offset=end)
   let exponent_marker = lexmatch spelling with longest {
@@ -33,8 +33,8 @@ fn decimal_spelling(
 ///|
 fn integer_exponent_spelling(
   source : String,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
 ) -> String? {
   let spelling = source.view(start_offset=start, end_offset=end)
   // Leading-zero integers may be legacy octal.
@@ -57,8 +57,8 @@ fn integer_exponent_spelling(
 ///|
 fn shortened_exponent_spelling(
   source : String,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
   decimal : DecimalSpelling,
 ) -> String? {
   let marker = decimal.exponent_marker
@@ -129,8 +129,8 @@ fn shortened_decimal_value(spelling : StringView) -> String? {
 ///|
 fn Printer::shortened_decimal_value(
   self : Printer,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
 ) -> String? {
   let spelling = self.program.source[start:end]
   guard self.decimal_spellings.get(spelling) is Some(cached) else {
@@ -143,7 +143,7 @@ fn Printer::shortened_decimal_value(
 
 ///|
 /// Only rewrite decimal spellings whose numeric value is unchanged exactly.
-fn Printer::number(self : Printer, start : Int, end : Int) -> Unit {
+fn Printer::number(self : Printer, start : Int32, end : Int32) -> Unit {
   // No supported numeric rewrite can shorten a one- or two-character spelling.
   guard end - start > 2 else { return self.span(start, end, true) }
   let source = self.program.source
@@ -174,13 +174,13 @@ fn Printer::number(self : Printer, start : Int, end : Int) -> Unit {
 
 ///|
 priv struct QuoteCosts {
-  unescaped_length : Int
-  single_quotes : Int
-  double_quotes : Int
+  unescaped_length : Int32
+  single_quotes : Int32
+  double_quotes : Int32
 }
 
 ///|
-fn quote_costs(source : String, start : Int, end : Int) -> QuoteCosts {
+fn quote_costs(source : String, start : Int32, end : Int32) -> QuoteCosts {
   for index = start + 1, unescaped_length = end - start, single_quotes = 0, double_quotes = 0 {
     guard index < end - 1 else {
       break { unescaped_length, single_quotes, double_quotes, }
@@ -202,18 +202,18 @@ fn quote_costs(source : String, start : Int, end : Int) -> QuoteCosts {
 
 ///|
 priv enum QuotedStringPiece {
-  Unchanged(Int)
-  SingleQuote(Int)
-  DoubleQuote(Int)
-  EscapedSingleQuote(Int)
-  EscapedDoubleQuote(Int)
+  Unchanged(Int32)
+  SingleQuote(Int32)
+  DoubleQuote(Int32)
+  EscapedSingleQuote(Int32)
+  EscapedDoubleQuote(Int32)
 }
 
 ///|
 fn quoted_string_piece(
   source : String,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
 ) -> QuotedStringPiece {
   lexmatch source.view(start_offset=start, end_offset=end) with longest {
     (re"^[^\\'\"]+", after=rest) => Unchanged(rest.start_offset())
@@ -239,7 +239,7 @@ fn QuoteCosts::preferred_quote(self : QuoteCosts, original : UInt16) -> UInt16 {
 }
 
 ///|
-fn QuoteCosts::quoted_length(self : QuoteCosts, quote : UInt16) -> Int {
+fn QuoteCosts::quoted_length(self : QuoteCosts, quote : UInt16) -> Int32 {
   self.unescaped_length +
   (if quote == '\'' { self.single_quotes } else { self.double_quotes })
 }
@@ -247,7 +247,7 @@ fn QuoteCosts::quoted_length(self : QuoteCosts, quote : UInt16) -> Int {
 ///|
 /// Change quote escapes only. Other escapes and line continuations retain
 /// their source spelling, including escapes in directive-like strings.
-fn Printer::string(self : Printer, start : Int, end : Int) -> Unit {
+fn Printer::string(self : Printer, start : Int32, end : Int32) -> Unit {
   let source = self.program.source
   guard end > start + 1 else {
     self.span(start, end, true)
@@ -271,8 +271,8 @@ fn Printer::string(self : Printer, start : Int, end : Int) -> Unit {
 ///|
 fn quoted_text(
   source : String,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
   quote : UInt16,
 ) -> String {
   let text = StringBuilder()
@@ -280,7 +280,7 @@ fn quoted_text(
   text.write_string(delimiter)
   let remaining = for index = start + 1, segment_start = start + 1 {
     guard index < end - 1 else { break segment_start }
-    let (next_index, character, is_escaped) : (Int, UInt16, Bool) = match
+    let (next_index, character, is_escaped) : (Int32, UInt16, Bool) = match
       quoted_string_piece(source, index, end) {
       Unchanged(next) => continue next, segment_start
       SingleQuote(next) => (next, '\'', false)

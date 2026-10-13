@@ -7,7 +7,7 @@
 /// Raises ParseError when the input cannot be parsed.
 pub fn minify(
   source : String,
-  internal_properties? : ArrayView[String] = [],
+  internal_properties~ : ArrayView[String] = [],
 ) -> String raise ParseError {
   minify_with(source, true, internal_properties~)
 }
@@ -20,7 +20,7 @@ pub fn minify(
 pub fn minify_with(
   source : String,
   rename_top_level : Bool,
-  internal_properties? : ArrayView[String] = [],
+  internal_properties~ : ArrayView[String] = [],
 ) -> String raise ParseError {
   let program = Program::parse(source)
   program.resolve()

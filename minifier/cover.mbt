@@ -2,8 +2,8 @@
 #valtype
 priv struct Parenthesized {
   items : PendingEdges
-  outer_scope : Int
-  parameter_scope : Int
+  outer_scope : Int32
+  parameter_scope : Int32
   trailing_comma : Bool
 }
 
@@ -40,7 +40,7 @@ fn Parser::finish_arrow(
   self : Parser,
   parameters : Parenthesized,
   is_async : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   guard !self.lexer.newline_before else {
     raise self.syntax_error("newline before arrow")
   }
@@ -76,7 +76,7 @@ fn Parser::finish_arrow(
 fn Parser::finish_parenthesized(
   self : Parser,
   expression : Parenthesized,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   self.collapse_parenthesized_scope(expression)
   guard !expression.trailing_comma && expression.items.length() > 0 else {
     raise self.syntax_error("invalid parenthesized expression")
@@ -100,9 +100,9 @@ fn Parser::finish_parenthesized(
 ///|
 fn Parser::async_parentheses(
   self : Parser,
-  name_start : Int,
-  name_end : Int,
-) -> Int raise ParseError {
+  name_start : Int32,
+  name_end : Int32,
+) -> Int32 raise ParseError {
   let expression = self.parenthesized()
   guard self.lexer.token != Arrow else {
     return self.finish_arrow(expression, true)
@@ -118,7 +118,7 @@ fn Parser::async_parentheses(
 /// Reinterpret only binding positions; default-value expressions keep their AST.
 fn Parser::cover_pattern(
   self : Parser,
-  id : Int,
+  id : Int32,
   declaring : Bool,
 ) -> Unit raise ParseError {
   let node = self.program.nodes[id]
@@ -205,7 +205,7 @@ fn Parser::cover_collection(
 ///|
 fn Parser::require_object_rest_identifier(
   self : Parser,
-  target : Int,
+  target : Int32,
 ) -> Unit raise ParseError {
   let kind = self.program.nodes[target].kind
   guard kind == Identifier || kind == PatternIdentifier else {
@@ -231,7 +231,10 @@ fn Parser::cover_rest(
 }
 
 ///|
-fn Parser::assignment_pattern(self : Parser, id : Int) -> Unit raise ParseError {
+fn Parser::assignment_pattern(
+  self : Parser,
+  id : Int32,
+) -> Unit raise ParseError {
   let kind = self.program.nodes[id].kind
   guard kind == ArrayLiteral || kind == ObjectLiteral else { return }
   self.cover_pattern(id, false)

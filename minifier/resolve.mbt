@@ -33,13 +33,17 @@ fn Program::collapse_transparent_scopes(self : Program) -> Unit {
 }
 
 ///|
-fn Program::reference_scope(self : Program, scope : Int) -> Int {
+fn Program::reference_scope(self : Program, scope : Int32) -> Int32 {
   guard self.scopes[scope].kind == SCOPE_TRANSPARENT else { return scope }
   self.scopes[scope].parent
 }
 
 ///|
-fn Program::find_binding(self : Program, start_scope : Int, name : Int) -> Int {
+fn Program::find_binding(
+  self : Program,
+  start_scope : Int32,
+  name : Int32,
+) -> Int32 {
   for scope = start_scope {
     guard scope >= 0 else { break -1 }
     let environment = self.scopes[scope]

@@ -2,14 +2,14 @@
 priv struct Lexer {
   source : String
   // The next unread UTF-16 code unit; token spans are [start, end).
-  mut position : Int
+  mut position : Int32
   mut token : Token
   mut keyword : Keyword
-  mut start : Int
-  mut end : Int
+  mut start : Int32
+  mut end : Int32
   mut newline_before : Bool
-  mut quasi_start : Int
-  mut quasi_end : Int
+  mut quasi_start : Int32
+  mut quasi_end : Int32
 }
 
 ///|
@@ -30,14 +30,14 @@ fn Lexer::new(source : String) -> Lexer {
 ///|
 #valtype
 priv struct LexerSnapshot {
-  position : Int
+  position : Int32
   token : Token
   keyword : Keyword
-  start : Int
-  end : Int
+  start : Int32
+  end : Int32
   newline_before : Bool
-  quasi_start : Int
-  quasi_end : Int
+  quasi_start : Int32
+  quasi_end : Int32
 }
 
 ///|
@@ -120,7 +120,7 @@ fn Lexer::line_comment_tail(self : Lexer) -> Unit {
 ///|
 fn Lexer::block_comment_tail(
   self : Lexer,
-  comment_start : Int,
+  comment_start : Int32,
 ) -> Unit raise ParseError {
   while true {
     lexmatch self.source.view(start_offset=self.position) with longest {
@@ -218,11 +218,11 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
         self.skip_ascii_whitespace()
         continue
       }
-      'A'..='Z' | 'a'..='z' | '_' | '$' =>
+      'A'..<='Z' | 'a'..<='z' | '_' | '$' =>
         return self.identifier_token(
           source.view(start_offset=self.position + 1),
         )
-      '0'..='9' => return self.number_token()
+      '0'..<='9' => return self.number_token()
       '.' => {
         let next = self.position + 1
         if next < length && source[next] >= '0' && source[next] <= '9' {
@@ -272,7 +272,7 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
       ',' => return self.finish_single_character_token(Comma)
       ':' => return self.finish_single_character_token(Colon)
       '~' => return self.finish_single_character_token(Tilde)
-      '\u0000'..='\u007F' => return self.operator_token()
+      '\u0000'..<='\u007F' => return self.operator_token()
       _ =>
         lexmatch source.view(start_offset=self.position) {
           (re"^[\u2028\u2029]+", after=rest) => {
@@ -305,7 +305,7 @@ let ascii_identifier_characters : FixedArray[Bool] = FixedArray::makei(
   ASCII_CHARACTER_COUNT,
   code_unit => {
     match code_unit.to_char().unwrap() {
-      'A'..='Z' | 'a'..='z' | '0'..='9' | '_' | '$' | '#' => true
+      'A'..<='Z' | 'a'..<='z' | '0'..<='9' | '_' | '$' | '#' => true
       _ => false
     }
   },

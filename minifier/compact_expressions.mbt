@@ -1,5 +1,5 @@
 ///|
-fn Program::unwrapped_expression(self : Program, id : Int) -> Int {
+fn Program::unwrapped_expression(self : Program, id : Int32) -> Int32 {
   for expression = id {
     guard expression >= 0 else { break expression }
     let node = self.nodes[expression]
@@ -11,7 +11,7 @@ fn Program::unwrapped_expression(self : Program, id : Int) -> Int {
 ///|
 /// These atoms keep their meaning without grouping. Strings can be directives;
 /// let/async need grouping in some for headers. Optional chains are not atoms.
-fn Program::compact_parenthesized(self : Program, id : Int) -> Unit {
+fn Program::compact_parenthesized(self : Program, id : Int32) -> Unit {
   let parenthesized = self.nodes[id]
   guard parenthesized.kind is Parenthesized else { return }
   let value = self.nodes[parenthesized.a]
@@ -27,7 +27,7 @@ fn Program::compact_parenthesized(self : Program, id : Int) -> Unit {
 }
 
 ///|
-fn Program::is_undefined_value(self : Program, id : Int) -> Bool {
+fn Program::is_undefined_value(self : Program, id : Int32) -> Bool {
   guard !self.has_dynamic_scope else { return false }
   let expression = self.unwrapped_expression(id)
   guard expression >= 0 else { return false }
@@ -38,14 +38,14 @@ fn Program::is_undefined_value(self : Program, id : Int) -> Bool {
 }
 
 ///|
-fn Program::is_number_literal(self : Program, id : Int) -> Bool {
+fn Program::is_number_literal(self : Program, id : Int32) -> Bool {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
   node.kind is NumberLiteral && self.source[node.b - 1] != 'n'
 }
 
 ///|
-fn Program::is_zero_literal(self : Program, id : Int) -> Bool {
+fn Program::is_zero_literal(self : Program, id : Int32) -> Bool {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
   node.kind is NumberLiteral &&
@@ -56,7 +56,7 @@ fn Program::is_zero_literal(self : Program, id : Int) -> Bool {
 ///|
 /// MoonBit emits decimal shift counts. Counts 1 through 31 make an unsigned
 /// right shift fit in Int32; count zero must keep the outer signed conversion.
-fn Program::is_positive_shift_count(self : Program, id : Int) -> Bool {
+fn Program::is_positive_shift_count(self : Program, id : Int32) -> Bool {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
   guard node.kind is NumberLiteral else { return false }
@@ -78,7 +78,7 @@ fn Program::is_positive_shift_count(self : Program, id : Int) -> Bool {
 }
 
 ///|
-fn Program::has_signed_number_result(self : Program, id : Int) -> Bool {
+fn Program::has_signed_number_result(self : Program, id : Int32) -> Bool {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
   guard node.kind is Binary else { return false }
@@ -104,7 +104,7 @@ fn Program::decimal_integer_literal_within(
   guard length > 0 && length <= maximum.length() else { return false }
   guard length == 1 || self.source[literal.a] != '0' else { return false }
   for index in literal.a..<literal.b {
-    guard self.source[index] is ('0'..='9') else { return false }
+    guard self.source[index] is ('0'..<='9') else { return false }
   }
   guard length == maximum.length() else { return true }
   for index in 0..<length {
@@ -122,7 +122,7 @@ fn Program::decimal_integer_literal_within(
 
 ///|
 /// Run after reference resolution, as part of the shared postorder arena scan.
-fn Program::compact_expression(self : Program, id : Int) -> Unit {
+fn Program::compact_expression(self : Program, id : Int32) -> Unit {
   let node = self.nodes[id]
   match node.kind {
     Return if self.is_undefined_value(node.a) =>
@@ -199,9 +199,9 @@ fn Program::compact_expression(self : Program, id : Int) -> Unit {
 /// bitwise operand, so (x | y | 0) >>> 0 must become (x | y) >>> 0.
 fn Program::integer_coercion_operand(
   self : Program,
-  id : Int,
+  id : Int32,
   operator : Operator,
-) -> Int {
+) -> Int32 {
   let value = self.nodes[id]
   let needs_parentheses = match value.kind {
     Assignment | Conditional | Logical | Sequence | ArrowExpression => true
@@ -227,7 +227,7 @@ fn Program::integer_coercion_operand(
 }
 
 ///|
-fn Program::negated_value(self : Program, id : Int) -> Int {
+fn Program::negated_value(self : Program, id : Int32) -> Int32 {
   let simplified = self.simplified_negation(id)
   guard simplified < 0 else { return simplified }
   let node = self.nodes[self.unwrapped_expression(id)]
@@ -242,7 +242,7 @@ fn Program::negated_value(self : Program, id : Int) -> Int {
 }
 
 ///|
-fn Program::simplified_negation(self : Program, id : Int) -> Int {
+fn Program::simplified_negation(self : Program, id : Int32) -> Int32 {
   let expression = self.unwrapped_expression(id)
   let node = self.nodes[expression]
   match node.kind {
@@ -267,7 +267,10 @@ fn Program::simplified_negation(self : Program, id : Int) -> Int {
 }
 
 ///|
-fn Program::remove_final_unit_return(self : Program, function_id : Int) -> Unit {
+fn Program::remove_final_unit_return(
+  self : Program,
+  function_id : Int32,
+) -> Unit {
   let function = self.functions[function_id]
   guard (function.flags & FUNCTION_EXPRESSION_BODY) == 0 else { return }
   self.trim_function_tail(function.body)
@@ -295,7 +298,7 @@ fn Program::remove_final_unit_return(self : Program, function_id : Int) -> Unit 
 ///|
 /// Falling off a function returns undefined. Only follow tails that execute
 /// once; a return in a loop, switch or finally has different control flow.
-fn Program::trim_function_tail(self : Program, id : Int) -> Unit {
+fn Program::trim_function_tail(self : Program, id : Int32) -> Unit {
   let node = self.nodes[id]
   match node.kind {
     Return if node.a < 0 => self.nodes[id] = Node::new(Empty, 0, 0, 0, 0)
@@ -329,7 +332,7 @@ fn Program::trim_function_tail(self : Program, id : Int) -> Unit {
 }
 
 ///|
-fn Program::is_empty_statement(self : Program, id : Int) -> Bool {
+fn Program::is_empty_statement(self : Program, id : Int32) -> Bool {
   let node = self.nodes[id]
   node.kind is Empty || (node.kind is Block && node.b == 0)
 }

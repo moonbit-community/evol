@@ -17,42 +17,42 @@ priv enum LiteralLocationKind {
 #valtype
 priv struct LiteralLocation {
   kind : LiteralLocationKind
-  parent_node : Int
-  edge_index : Int
+  parent_node : Int32
+  edge_index : Int32
 }
 
 ///|
-fn LiteralLocation::node_a(parent_node : Int) -> LiteralLocation {
+fn LiteralLocation::node_a(parent_node : Int32) -> LiteralLocation {
   { kind: NodeA, parent_node, edge_index: -1, }
 }
 
 ///|
-fn LiteralLocation::node_b(parent_node : Int) -> LiteralLocation {
+fn LiteralLocation::node_b(parent_node : Int32) -> LiteralLocation {
   { kind: NodeB, parent_node, edge_index: -1, }
 }
 
 ///|
-fn LiteralLocation::node_c(parent_node : Int) -> LiteralLocation {
+fn LiteralLocation::node_c(parent_node : Int32) -> LiteralLocation {
   { kind: NodeC, parent_node, edge_index: -1, }
 }
 
 ///|
-fn LiteralLocation::edge(edge_index : Int) -> LiteralLocation {
+fn LiteralLocation::edge(edge_index : Int32) -> LiteralLocation {
   { kind: Edge, parent_node: -1, edge_index, }
 }
 
 ///|
 #valtype
 priv struct LiteralOccurrence {
-  literal_node : Int
+  literal_node : Int32
   location : LiteralLocation
-  scope : Int
+  scope : Int32
 }
 
 ///|
 priv struct LiteralPool {
   program : Program
-  by_spelling : Map[StringView, Int]
+  by_spelling : Map[StringView, Int32]
   values : Array[PooledLiteral]
   include_function_bodies : Bool
 }
@@ -60,10 +60,10 @@ priv struct LiteralPool {
 ///|
 /// Small literals do not repay a new binding. A substantial saving also keeps
 /// the extra symbol and reference work focused on repeated static data.
-const MIN_POOLED_LITERAL_LENGTH : Int = 8
+const MIN_POOLED_LITERAL_LENGTH : Int32 = 8
 
 ///|
-const MIN_LITERAL_POOL_SAVING : Int = 256
+const MIN_LITERAL_POOL_SAVING : Int32 = 64
 
 ///|
 /// Run after compaction, before mangling. Modules retain root-only pooling:
@@ -102,9 +102,9 @@ fn LiteralPool::collect_root(self : LiteralPool) -> Unit {
 ///|
 fn LiteralPool::collect_statements(
   self : LiteralPool,
-  offset : Int,
-  count : Int,
-  scope : Int,
+  offset : Int32,
+  count : Int32,
+  scope : Int32,
 ) -> Unit {
   for index in 0..<count {
     self.collect_statement(self.program.edges[offset + index], scope)
@@ -114,8 +114,8 @@ fn LiteralPool::collect_statements(
 ///|
 fn LiteralPool::collect_statement(
   self : LiteralPool,
-  id : Int,
-  scope : Int,
+  id : Int32,
+  scope : Int32,
 ) -> Unit {
   guard id >= 0 else { return }
   let program = self.program
@@ -184,7 +184,7 @@ fn LiteralPool::collect_statement(
 ///|
 /// A loop header has its own lexical environment. Until that environment has
 /// an AST scope field, visit only bodies whose explicit block records it.
-fn LiteralPool::collect_scoped_block(self : LiteralPool, id : Int) -> Unit {
+fn LiteralPool::collect_scoped_block(self : LiteralPool, id : Int32) -> Unit {
   let body = self.program.nodes[id]
   // A value introduced by later compaction may be missed. This is only a
   // profitability shortcut; leaving its literal in place preserves behavior.
@@ -193,7 +193,7 @@ fn LiteralPool::collect_scoped_block(self : LiteralPool, id : Int) -> Unit {
 }
 
 ///|
-fn LiteralPool::collect_function(self : LiteralPool, id : Int) -> Unit {
+fn LiteralPool::collect_function(self : LiteralPool, id : Int32) -> Unit {
   guard self.include_function_bodies else { return }
   let function = self.program.functions[id]
   guard (function.flags & FUNCTION_EXPRESSION_BODY) == 0 else { return }
@@ -206,9 +206,9 @@ fn LiteralPool::collect_function(self : LiteralPool, id : Int) -> Unit {
 /// even when compaction moved a literal from another function or block.
 fn LiteralPool::collect_expression(
   self : LiteralPool,
-  id : Int,
+  id : Int32,
   location : LiteralLocation,
-  scope : Int,
+  scope : Int32,
 ) -> Unit {
   guard id >= 0 else { return }
   let program = self.program
@@ -268,9 +268,9 @@ fn LiteralPool::collect_expression(
 ///|
 fn LiteralPool::collect_list(
   self : LiteralPool,
-  offset : Int,
-  count : Int,
-  scope : Int,
+  offset : Int32,
+  count : Int32,
+  scope : Int32,
 ) -> Unit {
   for index in 0..<count {
     let position = offset + index
@@ -285,9 +285,9 @@ fn LiteralPool::collect_list(
 ///|
 fn LiteralPool::collect_literal(
   self : LiteralPool,
-  id : Int,
+  id : Int32,
   location : LiteralLocation,
-  scope : Int,
+  scope : Int32,
 ) -> Unit {
   let program = self.program
   let value = program.nodes[id]
@@ -314,7 +314,7 @@ fn LiteralPool::collect_literal(
 fn LiteralLocation::replace(
   self : LiteralLocation,
   program : Program,
-  replacement : Int,
+  replacement : Int32,
 ) -> Unit {
   match self.kind {
     NodeA => {
@@ -338,7 +338,7 @@ fn LiteralLocation::replace(
 fn LiteralPool::replace_occurrences(
   self : LiteralPool,
   pooled : PooledLiteral,
-  symbol : Int,
+  symbol : Int32,
 ) -> Unit {
   let program = self.program
   let name = program.symbols[symbol].name
@@ -354,8 +354,8 @@ fn LiteralPool::replace_occurrences(
 fn Program::replace_literal_occurrence(
   self : Program,
   occurrence : LiteralOccurrence,
-  name : Int,
-  symbol : Int,
+  name : Int32,
+  symbol : Int32,
 ) -> Unit {
   let value = self.nodes[occurrence.literal_node]
   let reference = self.add_reference({
@@ -370,7 +370,7 @@ fn Program::replace_literal_occurrence(
 }
 
 ///|
-fn Program::pooled_literal_length(self : Program, value : Node) -> Int {
+fn Program::pooled_literal_length(self : Program, value : Node) -> Int32 {
   let length = value.b - value.a
   if value.kind is StringLiteral {
     let costs = quote_costs(self.source, value.a, value.b)
@@ -401,7 +401,7 @@ fn Program::pooled_literal_length(self : Program, value : Node) -> Int {
 }
 
 ///|
-fn LiteralPool::create_bindings(self : LiteralPool) -> Array[Int] {
+fn LiteralPool::create_bindings(self : LiteralPool) -> Array[Int32] {
   let program = self.program
   // This overestimates the number of generated slots, including every source
   // name as potentially reserved. Actual pool names can only be shorter.
@@ -410,7 +410,7 @@ fn LiteralPool::create_bindings(self : LiteralPool) -> Array[Int] {
     self.values.length() +
     keywords.length()
   let name_length = program.alphabet.short_name(slot_bound).length()
-  let declarations : Array[Int] = []
+  let declarations : Array[Int32] = []
   for pooled in self.values {
     guard pooled.further_occurrences is Some(occurrences) else { continue }
     let occurrence_count = occurrences.length() + 1
@@ -476,7 +476,7 @@ fn LiteralPool::create_bindings(self : LiteralPool) -> Array[Int] {
 }
 
 ///|
-fn Program::fresh_literal_pool_name(self : Program) -> Int {
+fn Program::fresh_literal_pool_name(self : Program) -> Int32 {
   let spelling = for suffix = self.names.length() {
     let candidate = "$evol_literal_\{suffix}"
     guard self.identifier_ids.get(candidate[:]) is None else {
@@ -493,7 +493,7 @@ fn Program::fresh_literal_pool_name(self : Program) -> Int {
 ///|
 fn Program::insert_literal_pool_declarations(
   self : Program,
-  declarations : Array[Int],
+  declarations : Array[Int32],
 ) -> Unit {
   let root = self.nodes[self.root]
   let directive_count = for index = 0 {

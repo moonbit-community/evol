@@ -1,8 +1,8 @@
 ///|
 /// A 1-based source position, counted in UTF-16 code units.
 pub struct Position {
-  line : Int
-  column : Int
+  line : Int32
+  column : Int32
 }
 
 ///|
@@ -25,7 +25,7 @@ pub suberror ParseError {
 
 ///|
 /// Computes the 1-based line and column of a UTF-16 code-unit `offset`.
-fn position_at(source : String, offset : Int) -> Position {
+fn position_at(source : String, offset : Int32) -> Position {
   let length = source.length()
   let limit = if offset < length { offset } else { length }
   for index = 0, line = 1, column = 1 {

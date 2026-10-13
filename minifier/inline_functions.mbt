@@ -3,7 +3,7 @@
 /// originally creates it. A nested function or loop could allocate it again.
 fn ValueBindings::inline_function_values(self : ValueBindings) -> Unit {
   let program = self.program
-  let scopes : @hashset.HashSet[Int] = @hashset.HashSet([])
+  let scopes : @hashset.HashSet[Int32] = @hashset.HashSet([])
   for id in self.function_value_declarations {
     let declaration = program.nodes[id]
     guard declaration.kind is FunctionDeclaration else { continue }
@@ -35,7 +35,10 @@ fn ValueBindings::inline_function_values(self : ValueBindings) -> Unit {
 }
 
 ///|
-fn ValueBindings::inline_function_body(self : ValueBindings, id : Int) -> Unit {
+fn ValueBindings::inline_function_body(
+  self : ValueBindings,
+  id : Int32,
+) -> Unit {
   let program = self.program
   let body = program.nodes[id]
   for index in 0..<body.b {
@@ -49,7 +52,7 @@ fn ValueBindings::inline_function_body(self : ValueBindings, id : Int) -> Unit {
 ///|
 fn ValueBindings::inline_function_statement(
   self : ValueBindings,
-  id : Int,
+  id : Int32,
 ) -> Unit {
   guard id >= 0 else { return }
   let program = self.program
@@ -74,7 +77,7 @@ fn ValueBindings::inline_function_statement(
 ///|
 fn ValueBindings::inline_function_expression(
   self : ValueBindings,
-  id : Int,
+  id : Int32,
   primary_context : Bool,
 ) -> Unit {
   guard id >= 0 else { return }
@@ -150,8 +153,8 @@ fn ValueBindings::inline_function_expression(
 ///|
 fn ValueBindings::inline_function_list(
   self : ValueBindings,
-  offset : Int,
-  count : Int,
+  offset : Int32,
+  count : Int32,
 ) -> Unit {
   for index in 0..<count {
     self.inline_function_expression(self.program.edges[offset + index], false)
@@ -163,7 +166,7 @@ fn ValueBindings::inline_function_list(
 /// and parameter identity. No calls, accessors, coercions, defaults or rest.
 fn ValueBindings::inline_trivial_call(
   self : ValueBindings,
-  id : Int,
+  id : Int32,
   rename_top_level : Bool,
 ) -> Unit {
   let program = self.program

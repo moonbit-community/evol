@@ -57,6 +57,7 @@ priv struct Printer {
   mut previous_is_word : Bool
   mut last_character : UInt16
   mut pending_semicolon : Bool
+  mut in_for_initializer : Bool
   labels : LabelNames
   decimal_spellings : Map[StringView, String?]
 }
@@ -69,6 +70,7 @@ fn Printer::new(program : Program) -> Printer {
     previous_is_word: false,
     last_character: 0,
     pending_semicolon: false,
+    in_for_initializer: false,
     labels: LabelNames::new(program.alphabet),
     decimal_spellings: {},
   }
@@ -114,8 +116,8 @@ fn Printer::text(self : Printer, text : String, is_word : Bool) -> Unit {
 ///|
 fn Printer::span(
   self : Printer,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
   is_word : Bool,
 ) -> Unit {
   guard end > start else { return }
@@ -130,7 +132,7 @@ fn Printer::span(
 }
 
 ///|
-fn Printer::reference(self : Printer, id : Int) -> Unit {
+fn Printer::reference(self : Printer, id : Int32) -> Unit {
   let reference = self.program.references[id]
   let slot = if reference.symbol >= 0 {
     self.program.symbols[reference.symbol].name_slot
@@ -145,7 +147,7 @@ fn Printer::reference(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::statements(self : Printer, offset : Int, count : Int) -> Unit {
+fn Printer::statements(self : Printer, offset : Int32, count : Int32) -> Unit {
   let mut previous_declaration_kind = -1
   for i in 0..<count {
     let id = self.program.edges[offset + i]
@@ -188,7 +190,7 @@ fn Printer::statements(self : Printer, offset : Int, count : Int) -> Unit {
 }
 
 ///|
-fn Program::can_flatten_block(self : Program, id : Int) -> Bool {
+fn Program::can_flatten_block(self : Program, id : Int32) -> Bool {
   let block = self.nodes[id]
   for index in 0..<block.b {
     let statement = self.nodes[self.edges[block.a + index]]
@@ -204,7 +206,7 @@ fn Program::can_flatten_block(self : Program, id : Int) -> Bool {
 }
 
 ///|
-fn Printer::expressions(self : Printer, offset : Int, count : Int) -> Unit {
+fn Printer::expressions(self : Printer, offset : Int32, count : Int32) -> Unit {
   for i in 0..<count {
     if i > 0 {
       self.text(",", false)
@@ -222,7 +224,7 @@ fn Printer::expressions(self : Printer, offset : Int, count : Int) -> Unit {
 }
 
 ///|
-fn Printer::pattern(self : Printer, id : Int) -> Unit {
+fn Printer::pattern(self : Printer, id : Int32) -> Unit {
   let node = self.program.nodes[id]
   match node.kind {
     PatternIdentifier | Identifier => self.reference(node.a)
@@ -244,7 +246,11 @@ fn Printer::pattern(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::array_pattern(self : Printer, offset : Int, count : Int) -> Unit {
+fn Printer::array_pattern(
+  self : Printer,
+  offset : Int32,
+  count : Int32,
+) -> Unit {
   self.text("[", false)
   for index in 0..<count {
     if index > 0 {
@@ -258,7 +264,7 @@ fn Printer::array_pattern(self : Printer, offset : Int, count : Int) -> Unit {
 }
 
 ///|
-fn Printer::array_end(self : Printer, offset : Int, count : Int) -> Unit {
+fn Printer::array_end(self : Printer, offset : Int32, count : Int32) -> Unit {
   let ends_with_hole = count > 0 && self.program.edges[offset + count - 1] < 0
   if ends_with_hole {
     self.text(",", false)
@@ -267,7 +273,11 @@ fn Printer::array_end(self : Printer, offset : Int, count : Int) -> Unit {
 }
 
 ///|
-fn Printer::object_pattern(self : Printer, offset : Int, count : Int) -> Unit {
+fn Printer::object_pattern(
+  self : Printer,
+  offset : Int32,
+  count : Int32,
+) -> Unit {
   self.text("{", false)
   for index in 0..<count {
     if index > 0 {
@@ -279,7 +289,11 @@ fn Printer::object_pattern(self : Printer, offset : Int, count : Int) -> Unit {
 }
 
 ///|
-fn Printer::property_key(self : Printer, key : Int, is_computed : Bool) -> Unit {
+fn Printer::property_key(
+  self : Printer,
+  key : Int32,
+  is_computed : Bool,
+) -> Unit {
   guard is_computed else {
     self.pattern_key(key)
     return
@@ -325,7 +339,7 @@ fn Printer::pattern_property(self : Printer, property : Node) -> Unit {
 }
 
 ///|
-fn Printer::pattern_key(self : Printer, id : Int) -> Unit {
+fn Printer::pattern_key(self : Printer, id : Int32) -> Unit {
   guard self.program.property_names.get(id) is Some(name) else {
     let node = self.program.nodes[id]
     match node.kind {
@@ -339,7 +353,7 @@ fn Printer::pattern_key(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::property(self : Printer, id : Int) -> Unit {
+fn Printer::property(self : Printer, id : Int32) -> Unit {
   let node = self.program.nodes[id]
   match node.kind {
     PatternRest => {
@@ -360,7 +374,7 @@ fn Printer::property(self : Printer, id : Int) -> Unit {
 ///|
 fn Printer::method_prefix(
   self : Printer,
-  kind : Int,
+  kind : Int32,
   function : Function,
 ) -> Unit {
   guard kind != METHOD_GETTER else { return self.text("get", true) }
@@ -400,7 +414,7 @@ fn Printer::data_property(self : Printer, property : Node) -> Unit {
 }
 
 ///|
-fn Printer::shorthand_value_changed(self : Printer, id : Int) -> Bool {
+fn Printer::shorthand_value_changed(self : Printer, id : Int32) -> Bool {
   let reference = self.program.references[self.program.nodes[id].a]
   guard reference.symbol >= 0 else { return false }
   let symbol = self.program.symbols[reference.symbol]
@@ -422,7 +436,7 @@ fn Printer::parameters(self : Printer, function : Function) -> Unit {
 }
 
 ///|
-fn Printer::function(self : Printer, id : Int, with_name : Bool) -> Unit {
+fn Printer::function(self : Printer, id : Int32, with_name : Bool) -> Unit {
   let function = self.program.functions[id]
   if (function.flags & FUNCTION_ASYNC) != 0 {
     self.text("async", true)
@@ -461,7 +475,7 @@ fn Printer::arrow_function(self : Printer, function : Function) -> Unit {
 }
 
 ///|
-fn Printer::class(self : Printer, id : Int) -> Unit {
+fn Printer::class(self : Printer, id : Int32) -> Unit {
   let class = self.program.classes[id]
   self.text("class", true)
   if class.name >= 0 {
@@ -479,7 +493,7 @@ fn Printer::class(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::class_member(self : Printer, id : Int) -> Unit {
+fn Printer::class_member(self : Printer, id : Int32) -> Unit {
   let node = self.program.nodes[id]
   match node.kind {
     Method => {
@@ -512,7 +526,7 @@ fn Printer::class_member(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::block(self : Printer, id : Int) -> Unit {
+fn Printer::block(self : Printer, id : Int32) -> Unit {
   let node = self.program.nodes[id]
   self.text("{", false)
   self.statements(node.a, node.b)
@@ -521,7 +535,7 @@ fn Printer::block(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::primary(self : Printer, id : Int) -> Unit {
+fn Printer::primary(self : Printer, id : Int32) -> Unit {
   guard id >= 0 else { return }
   let node = self.program.nodes[id]
   let value = if node.kind is Parenthesized {
@@ -549,7 +563,7 @@ fn Printer::primary(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::expression(self : Printer, id : Int) -> Unit {
+fn Printer::expression(self : Printer, id : Int32) -> Unit {
   guard id >= 0 else { return }
   let node = self.program.nodes[id]
   match node.kind {
@@ -608,14 +622,14 @@ fn Printer::expression(self : Printer, id : Int) -> Unit {
         self.text(operator.text(), false)
       }
       self.text("=", false)
-      self.expression(node.c)
+      self.assignment_expression(node.c)
     }
     Conditional => {
       self.expression(node.a)
       self.text("?", false)
-      self.expression(node.b)
+      self.assignment_expression(node.b)
       self.text(":", false)
-      self.expression(node.c)
+      self.assignment_expression(node.c)
     }
     Call => {
       self.primary(node.a)
@@ -690,7 +704,11 @@ fn Printer::new_expression(
 }
 
 ///|
-fn Printer::array_literal(self : Printer, offset : Int, count : Int) -> Unit {
+fn Printer::array_literal(
+  self : Printer,
+  offset : Int32,
+  count : Int32,
+) -> Unit {
   self.text("[", false)
   for index in 0..<count {
     if index > 0 {
@@ -704,7 +722,11 @@ fn Printer::array_literal(self : Printer, offset : Int, count : Int) -> Unit {
 }
 
 ///|
-fn Printer::object_literal(self : Printer, offset : Int, count : Int) -> Unit {
+fn Printer::object_literal(
+  self : Printer,
+  offset : Int32,
+  count : Int32,
+) -> Unit {
   self.text("{", false)
   for index in 0..<count {
     if index > 0 {
@@ -719,7 +741,7 @@ fn Printer::object_literal(self : Printer, offset : Int, count : Int) -> Unit {
 fn Printer::update_expression(
   self : Printer,
   operator : Operator,
-  operand : Int,
+  operand : Int32,
   is_prefix : Bool,
 ) -> Unit {
   if is_prefix {
@@ -732,7 +754,7 @@ fn Printer::update_expression(
 }
 
 ///|
-fn Printer::assignment_target(self : Printer, id : Int) -> Unit {
+fn Printer::assignment_target(self : Printer, id : Int32) -> Unit {
   let node = self.program.nodes[id]
   match node.kind {
     EvaluatedValue => self.detached_value(node.a)
@@ -747,7 +769,7 @@ fn Printer::assignment_target(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::detached_value(self : Printer, id : Int) -> Unit {
+fn Printer::detached_value(self : Printer, id : Int32) -> Unit {
   self.text("(0,", false)
   self.expression(id)
   self.text(")", false)
@@ -757,8 +779,8 @@ fn Printer::detached_value(self : Printer, id : Int) -> Unit {
 fn Printer::binary_expression(
   self : Printer,
   operator : Operator,
-  left : Int,
-  right : Int,
+  left : Int32,
+  right : Int32,
 ) -> Unit {
   match operator {
     Exponent => self.primary(left)
@@ -782,7 +804,7 @@ fn Printer::binary_expression(
 ///|
 fn Printer::member_expression(
   self : Printer,
-  id : Int,
+  id : Int32,
   member_node : Node,
 ) -> Unit {
   let object = member_node.a
@@ -821,8 +843,8 @@ fn Printer::member_expression(
 ///|
 fn Printer::template_expression(
   self : Printer,
-  offset : Int,
-  count : Int,
+  offset : Int32,
+  count : Int32,
 ) -> Unit {
   self.text("`", false)
   // Each literal span has two edges; each following interpolation has one.
@@ -857,7 +879,7 @@ fn NodeKind::needs_semicolon(kind : NodeKind) -> Bool {
 }
 
 ///|
-fn Printer::statement(self : Printer, id : Int) -> Unit {
+fn Printer::statement(self : Printer, id : Int32) -> Unit {
   let node = self.program.nodes[id]
   match node.kind {
     ExpressionStatement => self.expression_statement(node.a)
@@ -887,12 +909,12 @@ fn Printer::statement(self : Printer, id : Int) -> Unit {
     Return => {
       self.text("return", true)
       if node.a >= 0 {
-        self.expression(node.a)
+        self.expression(self.program.unwrapped_expression(node.a))
       }
     }
     Throw => {
       self.text("throw", true)
-      self.expression(node.a)
+      self.expression(self.program.unwrapped_expression(node.a))
     }
     Break | Continue => {
       self.text(if node.kind == Break { "break" } else { "continue" }, true)
@@ -915,16 +937,19 @@ fn Printer::statement(self : Printer, id : Int) -> Unit {
 }
 
 ///|
-fn Printer::parenthesized_expression(self : Printer, expression : Int) -> Unit {
+fn Printer::parenthesized_expression(
+  self : Printer,
+  expression : Int32,
+) -> Unit {
   self.text("(", false)
-  self.expression(expression)
+  self.expression(self.program.unwrapped_expression(expression))
   self.text(")", false)
 }
 
 ///|
 /// An expression can become the start of a statement after value or branch
 /// folding. Follow its first printed operand, keeping directive strings bare.
-fn Printer::needs_statement_parentheses(self : Printer, id : Int) -> Bool {
+fn Printer::needs_statement_parentheses(self : Printer, id : Int32) -> Bool {
   guard id >= 0 else { return false }
   let node = self.program.nodes[id]
   match node.kind {
@@ -949,7 +974,7 @@ fn Printer::needs_statement_parentheses(self : Printer, id : Int) -> Bool {
 }
 
 ///|
-fn Printer::expression_statement(self : Printer, id : Int) -> Unit {
+fn Printer::expression_statement(self : Printer, id : Int32) -> Unit {
   if self.needs_statement_parentheses(id) {
     self.parenthesized_expression(id)
   } else {
@@ -960,7 +985,7 @@ fn Printer::expression_statement(self : Printer, id : Int) -> Unit {
 ///|
 fn Printer::statement_slot_expression(
   self : Printer,
-  id : Int,
+  id : Int32,
   context : SlotOperand,
 ) -> Unit {
   if self.needs_statement_parentheses(id) {
@@ -973,9 +998,9 @@ fn Printer::statement_slot_expression(
 ///|
 fn Printer::if_statement(
   self : Printer,
-  condition : Int,
-  consequent : Int,
-  alternative : Int,
+  condition : Int32,
+  consequent : Int32,
+  alternative : Int32,
 ) -> Unit {
   let consequent_node = self.program.nodes[self.program.single_statement(
       consequent,
@@ -1061,7 +1086,7 @@ fn Printer::if_statement(
 }
 
 ///|
-fn Program::empty_branch(self : Program, id : Int) -> Bool {
+fn Program::empty_branch(self : Program, id : Int32) -> Bool {
   id < 0 || self.is_empty_statement(self.single_statement(id))
 }
 
@@ -1070,8 +1095,8 @@ fn Program::empty_branch(self : Program, id : Int) -> Bool {
 /// The boolean says whether the effect runs when that guard is false.
 fn Program::guarded_statement_effect(
   self : Program,
-  id : Int,
-) -> (Int, Bool, Int)? {
+  id : Int32,
+) -> (Int32, Bool, Int32)? {
   let statement = self.nodes[self.single_statement(id)]
   match statement.kind {
     ExpressionStatement => {
@@ -1103,9 +1128,9 @@ fn Program::guarded_statement_effect(
 ///|
 fn Printer::same_effect_if_statement(
   self : Printer,
-  condition : Int,
-  consequent : Int,
-  alternative : Int,
+  condition : Int32,
+  consequent : Int32,
+  alternative : Int32,
 ) -> Bool {
   let program = self.program
   guard !program.has_dynamic_scope else { return false }
@@ -1157,8 +1182,8 @@ fn Printer::same_effect_if_statement(
 fn Printer::logical_statement(
   self : Printer,
   operator : Operator,
-  left : Int,
-  right : Int,
+  left : Int32,
+  right : Int32,
 ) -> Unit {
   self.statement_slot_expression(left, LogicalOperand(operator))
   self.text(operator.text(), false)
@@ -1169,18 +1194,31 @@ fn Printer::logical_statement(
 ///|
 fn Printer::slot_expression(
   self : Printer,
-  id : Int,
+  id : Int32,
   context : SlotOperand,
 ) -> Unit {
-  if self.program.slot_needs_parentheses(id, context) {
-    self.parenthesized_expression(id)
+  let value = self.program.unwrapped_expression(id)
+  if self.program.slot_needs_parentheses(value, context) {
+    self.parenthesized_expression(value)
   } else {
-    self.expression(id)
+    self.expression(value)
   }
 }
 
 ///|
-fn Program::always_exits(self : Program, id : Int) -> Bool {
+/// Initializers, assignments and conditional arms accept one assignment
+/// expression. Only an outer comma expression needs grouping here; grouping
+/// within a member, call or optional chain remains attached to that operand.
+/// For initializers retain source grouping because their grammar excludes in.
+fn Printer::assignment_expression(self : Printer, id : Int32) -> Unit {
+  guard self.program.nodes[id].kind is Parenthesized && !self.in_for_initializer else {
+    return self.expression(id)
+  }
+  self.slot_expression(id, ConditionalArm)
+}
+
+///|
+fn Program::always_exits(self : Program, id : Int32) -> Bool {
   let node = self.nodes[id]
   match node.kind {
     Return | Throw | Break | Continue => true
@@ -1193,7 +1231,7 @@ fn Program::always_exits(self : Program, id : Int) -> Bool {
 ///|
 fn Printer::statement_body(
   self : Printer,
-  id : Int,
+  id : Int32,
   protect_else : Bool,
 ) -> Unit {
   let statement = self.program.single_statement(id)
@@ -1218,7 +1256,7 @@ fn Printer::statement_body(
 }
 
 ///|
-fn Program::has_unmatched_if(self : Program, id : Int) -> Bool {
+fn Program::has_unmatched_if(self : Program, id : Int32) -> Bool {
   let node = self.nodes[self.single_statement(id)]
   match node.kind {
     If =>
@@ -1234,12 +1272,16 @@ fn Program::has_unmatched_if(self : Program, id : Int) -> Bool {
 }
 
 ///|
-fn Printer::for_initializer(self : Printer, initializer : Int) -> Unit {
+fn Printer::for_initializer(self : Printer, initializer : Int32) -> Unit {
+  let previous_context = self.in_for_initializer
+  self.in_for_initializer = true
   let node = self.program.nodes[initializer]
-  guard node.kind == VariableDeclaration else {
-    return self.expression(initializer)
+  if node.kind is VariableDeclaration {
+    self.declaration(node)
+  } else {
+    self.expression(initializer)
   }
-  self.declaration(node)
+  self.in_for_initializer = previous_context
 }
 
 ///|
@@ -1284,7 +1326,11 @@ fn Printer::for_each_statement(self : Printer, statement : Node) -> Unit {
 }
 
 ///|
-fn Printer::labeled_statement(self : Printer, label : Int, body : Int) -> Unit {
+fn Printer::labeled_statement(
+  self : Printer,
+  label : Int32,
+  body : Int32,
+) -> Unit {
   let name = self.label_name()
   self.labels.active.push((label, name))
   self.text(name, true)
@@ -1296,9 +1342,9 @@ fn Printer::labeled_statement(self : Printer, label : Int, body : Int) -> Unit {
 ///|
 fn Printer::switch_statement(
   self : Printer,
-  discriminant : Int,
-  offset : Int,
-  count : Int,
+  discriminant : Int32,
+  offset : Int32,
+  count : Int32,
 ) -> Unit {
   self.text("switch", true)
   self.text("(", false)
@@ -1314,9 +1360,9 @@ fn Printer::switch_statement(
 ///|
 fn Printer::try_statement(
   self : Printer,
-  body : Int,
-  handler : Int,
-  finalizer : Int,
+  body : Int32,
+  handler : Int32,
+  finalizer : Int32,
 ) -> Unit {
   self.text("try", true)
   self.block(body)
@@ -1336,7 +1382,7 @@ fn Printer::try_statement(
 }
 
 ///|
-fn Printer::switch_case(self : Printer, id : Int) -> Unit {
+fn Printer::switch_case(self : Printer, id : Int32) -> Unit {
   let node = self.program.nodes[id]
   if node.a >= 0 {
     self.text("case", true)
@@ -1362,7 +1408,7 @@ fn Printer::declaration(self : Printer, node : Node) -> Unit {
 }
 
 ///|
-fn Printer::declarators(self : Printer, offset : Int, count : Int) -> Unit {
+fn Printer::declarators(self : Printer, offset : Int32, count : Int32) -> Unit {
   for i in 0..<count {
     if i > 0 {
       self.text(",", false)
@@ -1371,7 +1417,7 @@ fn Printer::declarators(self : Printer, offset : Int, count : Int) -> Unit {
     self.pattern(declarator.a)
     guard declarator.b >= 0 else { continue }
     self.text("=", false)
-    self.expression(declarator.b)
+    self.assignment_expression(declarator.b)
   }
 }
 
@@ -1390,7 +1436,7 @@ fn Printer::class_key(self : Printer, property : Node) -> Unit {
 }
 
 ///|
-fn Printer::is_renamed(self : Printer, symbol : Int) -> Bool {
+fn Printer::is_renamed(self : Printer, symbol : Int32) -> Bool {
   guard symbol >= 0 else { return false }
   let binding = self.program.symbols[symbol]
   binding.name_slot >= 0 &&
@@ -1401,7 +1447,7 @@ fn Printer::is_renamed(self : Printer, symbol : Int) -> Bool {
 ///|
 /// Statement folding builds a right-hand sequence spine. Print it iteratively
 /// so a long run of expression statements does not grow the call stack.
-fn Printer::sequence_expression(self : Printer, id : Int) -> Unit {
+fn Printer::sequence_expression(self : Printer, id : Int32) -> Unit {
   for current = id {
     let node = self.program.nodes[current]
     guard node.b > 0 else { break }

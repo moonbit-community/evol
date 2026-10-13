@@ -2,8 +2,8 @@
 #valtype
 priv struct IdentifierEntry {
   spelling : StringView
-  hash : Int
-  id : Int
+  hash : Int32
+  id : Int32
 }
 
 ///|
@@ -11,7 +11,7 @@ priv struct IdentifierEntry {
 /// slot. Capacity is a power of two, with at least one quarter kept empty.
 priv struct IdentifierTable {
   entries : Array[IdentifierEntry]
-  mut slots : Array[Int]
+  mut slots : Array[Int32]
 }
 
 ///|
@@ -25,18 +25,18 @@ fn IdentifierTable::new() -> IdentifierTable {
 }
 
 ///|
-const FNV_OFFSET : UInt = 2166136261U
+const FNV_OFFSET : UInt32 = 2166136261U
 
 ///|
-const FNV_PRIME : UInt = 16777619U
+const FNV_PRIME : UInt32 = 16777619U
 
 ///|
-const IDENTIFIER_HASH_WINDOW : Int = 8
+const IDENTIFIER_HASH_WINDOW : Int32 = 8
 
 ///|
 /// Hashes select buckets only; find_slot still compares the complete spelling.
 /// Long generated names need only fixed windows to distribute their entries.
-fn identifier_hash(spelling : StringView) -> Int {
+fn identifier_hash(spelling : StringView) -> Int32 {
   let length = spelling.length()
   guard length > IDENTIFIER_HASH_WINDOW * 3 else {
     return identifier_hash_range(spelling, 0, length, FNV_OFFSET).reinterpret_as_int()
@@ -66,10 +66,10 @@ fn identifier_hash(spelling : StringView) -> Int {
 ///|
 fn identifier_hash_range(
   spelling : StringView,
-  start : Int,
-  end : Int,
-  seed : UInt,
-) -> UInt {
+  start : Int32,
+  end : Int32,
+  seed : UInt32,
+) -> UInt32 {
   let mut hash = seed
   for index in start..<end {
     hash = (hash ^ spelling[index].to_uint()) * FNV_PRIME
@@ -81,8 +81,8 @@ fn identifier_hash_range(
 fn IdentifierTable::find_slot(
   self : IdentifierTable,
   spelling : StringView,
-  hash : Int,
-) -> Int {
+  hash : Int32,
+) -> Int32 {
   let mask = self.slots.length() - 1
   for slot = hash & mask {
     let index = self.slots[slot]
@@ -96,7 +96,10 @@ fn IdentifierTable::find_slot(
 }
 
 ///|
-fn IdentifierTable::get(self : IdentifierTable, spelling : StringView) -> Int? {
+fn IdentifierTable::get(
+  self : IdentifierTable,
+  spelling : StringView,
+) -> Int32? {
   self.get_hashed(spelling, identifier_hash(spelling))
 }
 
@@ -104,8 +107,8 @@ fn IdentifierTable::get(self : IdentifierTable, spelling : StringView) -> Int? {
 fn IdentifierTable::get_hashed(
   self : IdentifierTable,
   spelling : StringView,
-  hash : Int,
-) -> Int? {
+  hash : Int32,
+) -> Int32? {
   let slot = self.find_slot(spelling, hash)
   let index = self.slots[slot]
   guard index >= 0 else { return None }
@@ -116,7 +119,7 @@ fn IdentifierTable::get_hashed(
 fn IdentifierTable::insert(
   self : IdentifierTable,
   spelling : StringView,
-  id : Int,
+  id : Int32,
 ) -> Unit {
   self.insert_hashed(spelling, identifier_hash(spelling), id)
 }
@@ -125,8 +128,8 @@ fn IdentifierTable::insert(
 fn IdentifierTable::insert_hashed(
   self : IdentifierTable,
   spelling : StringView,
-  hash : Int,
-  id : Int,
+  hash : Int32,
+  id : Int32,
 ) -> Unit {
   if (self.entries.length() + 1) * 4 >= self.slots.length() * 3 {
     self.grow()

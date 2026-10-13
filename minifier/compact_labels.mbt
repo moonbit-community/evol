@@ -1,11 +1,11 @@
 ///|
 #valtype
 priv struct LabelExitGuard {
-  statement_index : Int
-  condition : Int
+  statement_index : Int32
+  condition : Int32
   invert_condition : Bool
-  failure_branch : Int
-  success_prefix : Int
+  failure_branch : Int32
+  success_prefix : Int32
 }
 
 ///|
@@ -13,7 +13,7 @@ priv struct LabelExitGuard {
 /// becomes { prefix; if (!bad) { success } { failure } } when success always
 /// exits beyond L. Keep both existing lexical environments; the new success
 /// block contains no direct lexical declarations and needs no new scope.
-fn Program::compact_label_exit(self : Program, id : Int) -> Unit {
+fn Program::compact_label_exit(self : Program, id : Int32) -> Unit {
   guard !self.has_dynamic_scope else { return }
   let labeled = self.nodes[id]
   guard labeled.kind is Labeled else { return }
@@ -105,7 +105,7 @@ fn Program::compact_label_exit(self : Program, id : Int) -> Unit {
 /// order. Other exits keep the label, including exits inside loops or finally.
 fn Program::compact_simple_label_guards(
   self : Program,
-  id : Int,
+  id : Int32,
   labeled : Node,
   original_body : Node,
 ) -> Bool {
@@ -153,7 +153,7 @@ fn Program::compact_simple_label_guards(
 fn Program::can_nest_label_suffix(
   self : Program,
   body : Node,
-  start : Int,
+  start : Int32,
 ) -> Bool {
   for index in start..<body.b {
     guard self.can_nest_label_tail(self.edges[body.a + index]) else {
@@ -169,7 +169,7 @@ fn Program::can_nest_label_suffix(
 fn Program::is_forwarding_label_test(
   self : Program,
   body : Node,
-  label : Int,
+  label : Int32,
 ) -> Bool {
   let tail = self.nodes[self.edges[body.a + body.b - 1]]
   guard tail.kind is Break && tail.c >= 0 && tail.c != label else {
@@ -186,7 +186,7 @@ fn Program::is_forwarding_label_test(
 ///|
 /// Only these statement tails fall directly out of the enclosing label.
 /// Loops, switches and exception handlers keep their own completion behavior.
-fn Program::trim_label_tail(self : Program, id : Int, label : Int) -> Bool {
+fn Program::trim_label_tail(self : Program, id : Int32, label : Int32) -> Bool {
   let node = self.nodes[id]
   match node.kind {
     Break if node.c == label => {
@@ -240,7 +240,7 @@ fn Program::trim_label_tail(self : Program, id : Int, label : Int) -> Bool {
 /// Called only after a tail break was removed. Unlike tail trimming, this
 /// reference check visits loop/switch/try bodies, where earlier exits remain
 /// necessary. Function and class bodies have independent label namespaces.
-fn Program::references_label(self : Program, id : Int, label : Int) -> Bool {
+fn Program::references_label(self : Program, id : Int32, label : Int32) -> Bool {
   guard id >= 0 else { return false }
   let node = self.nodes[id]
   match node.kind {
@@ -275,9 +275,9 @@ fn Program::references_label(self : Program, id : Int, label : Int) -> Bool {
 ///|
 fn Program::statements_reference_label(
   self : Program,
-  offset : Int,
-  count : Int,
-  label : Int,
+  offset : Int32,
+  count : Int32,
+  label : Int32,
 ) -> Bool {
   for index in 0..<count {
     if self.references_label(self.edges[offset + index], label) {
@@ -294,7 +294,7 @@ fn Program::statements_reference_label(
 /// two explicit targets, so there are no declarations or finally boundaries.
 fn Program::compact_label_test(
   self : Program,
-  id : Int,
+  id : Int32,
   outer : Node,
   body : Node,
 ) -> Bool {
@@ -327,7 +327,7 @@ fn Program::compact_label_test(
 ///|
 /// Every successful arm breaks to the same inner label. A false arm may only
 /// fall through or test another condition; no other statement can be moved.
-fn Program::is_label_test(self : Program, id : Int, label : Int) -> Bool {
+fn Program::is_label_test(self : Program, id : Int32, label : Int32) -> Bool {
   let branch = self.nodes[self.single_statement(id)]
   guard branch.kind is If else { return false }
   let consequent = self.nodes[self.single_statement(branch.b)]
@@ -337,7 +337,11 @@ fn Program::is_label_test(self : Program, id : Int, label : Int) -> Bool {
 }
 
 ///|
-fn Program::label_test_condition(self : Program, id : Int, label : Int) -> Int {
+fn Program::label_test_condition(
+  self : Program,
+  id : Int32,
+  label : Int32,
+) -> Int32 {
   let branch = self.nodes[self.single_statement(id)]
   let consequent = self.nodes[self.single_statement(branch.b)]
   let then_breaks = consequent.kind is Break && consequent.c == label
@@ -361,7 +365,7 @@ fn Program::label_test_condition(self : Program, id : Int, label : Int) -> Int {
 fn Program::label_exit_guard(
   self : Program,
   body : Node,
-  label : Int,
+  label : Int32,
 ) -> LabelExitGuard? {
   for index in 0..<(body.b - 1) {
     let branch = self.nodes[self.edges[body.a + index]]
@@ -391,8 +395,8 @@ fn Program::label_exit_guard(
 ///|
 fn Program::has_direct_label_break_tail(
   self : Program,
-  id : Int,
-  label : Int,
+  id : Int32,
+  label : Int32,
 ) -> Bool {
   let branch = self.nodes[id]
   let tail = if branch.kind is Block && branch.b > 0 {
@@ -406,7 +410,11 @@ fn Program::has_direct_label_break_tail(
 ///|
 /// The terminal jump must leave the candidate label. A nested loop, switch,
 /// label or try statement needs its own target/finally analysis and is skipped.
-fn Program::exits_beyond_label(self : Program, id : Int, label : Int) -> Bool {
+fn Program::exits_beyond_label(
+  self : Program,
+  id : Int32,
+  label : Int32,
+) -> Bool {
   let node = self.nodes[id]
   match node.kind {
     Return | Throw => true
@@ -424,7 +432,7 @@ fn Program::exits_beyond_label(self : Program, id : Int, label : Int) -> Bool {
 ///|
 /// Moving a lexical declaration into a new conditional block changes its TDZ
 /// and visibility to the prefix. Nested blocks retain their existing scopes.
-fn Program::can_nest_label_tail(self : Program, id : Int) -> Bool {
+fn Program::can_nest_label_tail(self : Program, id : Int32) -> Bool {
   let node = self.nodes[id]
   match node.kind {
     VariableDeclaration => node.a == DECLARATION_VAR
@@ -437,7 +445,11 @@ fn Program::can_nest_label_tail(self : Program, id : Int) -> Bool {
 ///|
 /// Count only statement-level jumps; function/class expressions introduce
 /// independent label namespaces. Negative means an unsupported boundary.
-fn Program::label_break_count(self : Program, id : Int, label : Int) -> Int {
+fn Program::label_break_count(
+  self : Program,
+  id : Int32,
+  label : Int32,
+) -> Int32 {
   guard id >= 0 else { return 0 }
   let node = self.nodes[id]
   match node.kind {
@@ -482,10 +494,10 @@ fn Program::label_break_count(self : Program, id : Int, label : Int) -> Int {
 ///|
 fn Program::label_breaks_in_statements(
   self : Program,
-  offset : Int,
-  count : Int,
-  label : Int,
-) -> Int {
+  offset : Int32,
+  count : Int32,
+  label : Int32,
+) -> Int32 {
   let mut breaks = 0
   for index in 0..<count {
     let statement_breaks = self.label_break_count(

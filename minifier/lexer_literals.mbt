@@ -136,8 +136,8 @@ fn Lexer::template_chunk(
 ///|
 fn Lexer::finish_template_chunk(
   self : Lexer,
-  content_start : Int,
-  delimiter_width : Int,
+  content_start : Int32,
+  delimiter_width : Int32,
   token : Token,
 ) -> Unit {
   self.quasi_start = content_start

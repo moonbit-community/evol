@@ -4,8 +4,8 @@
 /// moved: declarations and other control flow keep their original statements.
 fn Program::compact_value_branch_return(
   self : Program,
-  branch_id : Int,
-  return_id : Int,
+  branch_id : Int32,
+  return_id : Int32,
 ) -> Bool {
   let branch = self.nodes[branch_id]
   let following = self.nodes[return_id]
@@ -14,17 +14,11 @@ fn Program::compact_value_branch_return(
   let (yes, no) = if consequent.kind is Return &&
     consequent.a >= 0 &&
     self.is_expression_prefix(branch.c) {
-    (
-      consequent.a,
-      self.prefix_return_value(branch.c, following.a),
-    )
+    (consequent.a, self.prefix_return_value(branch.c, following.a))
   } else if alternative.kind is Return &&
     alternative.a >= 0 &&
     self.is_expression_prefix(branch.b) {
-    (
-      self.prefix_return_value(branch.b, following.a),
-      alternative.a,
-    )
+    (self.prefix_return_value(branch.b, following.a), alternative.a)
   } else {
     return false
   }
@@ -34,7 +28,7 @@ fn Program::compact_value_branch_return(
 }
 
 ///|
-fn Program::is_expression_prefix(self : Program, id : Int) -> Bool {
+fn Program::is_expression_prefix(self : Program, id : Int32) -> Bool {
   let statement = self.nodes[self.single_statement(id)]
   match statement.kind {
     Empty | ExpressionStatement => true
@@ -55,9 +49,9 @@ fn Program::is_expression_prefix(self : Program, id : Int) -> Bool {
 /// Called only after the prefix is known to contain no bindings or exits.
 fn Program::prefix_return_value(
   self : Program,
-  id : Int,
-  result : Int,
-) -> Int {
+  id : Int32,
+  result : Int32,
+) -> Int32 {
   let statement = self.nodes[self.single_statement(id)]
   match statement.kind {
     ExpressionStatement => self.sequence_pair(statement.a, result)
@@ -77,7 +71,7 @@ fn Program::prefix_return_value(
 /// Share the bare return while retaining the effect arm's lexical block:
 /// if (test) return; else { effects; return } becomes a guarded effect block
 /// followed by return. The enclosing statement need not be a function tail.
-fn Program::compact_unit_branch(self : Program, id : Int) -> Unit {
+fn Program::compact_unit_branch(self : Program, id : Int32) -> Unit {
   let branch = self.nodes[id]
   guard branch.kind is If && branch.c >= 0 else { return }
   let (effects_id, invert_condition) = if self.is_bare_return_statement(
@@ -121,7 +115,7 @@ fn Program::compact_unit_branch(self : Program, id : Int) -> Unit {
 }
 
 ///|
-fn Program::is_bare_return_statement(self : Program, id : Int) -> Bool {
+fn Program::is_bare_return_statement(self : Program, id : Int32) -> Bool {
   let statement = self.nodes[self.single_statement(id)]
   statement.kind is Return && statement.a < 0
 }
@@ -132,8 +126,8 @@ fn Program::is_bare_return_statement(self : Program, id : Int) -> Bool {
 /// this statement list need not be at the end of its function.
 fn Program::compact_guarded_unit_return(
   self : Program,
-  guard_id : Int,
-  following_id : Int,
+  guard_id : Int32,
+  following_id : Int32,
 ) -> Bool {
   let branch = self.nodes[guard_id]
   guard branch.kind is If && branch.c < 0 else { return false }
@@ -150,7 +144,7 @@ fn Program::compact_guarded_unit_return(
 ///|
 /// Follow existing lexical blocks only. A finally, loop, switch or conditional
 /// can alter completion and is deliberately outside this rule.
-fn Program::has_bare_return_tail(self : Program, id : Int) -> Bool {
+fn Program::has_bare_return_tail(self : Program, id : Int32) -> Bool {
   for block_id = id {
     let block = self.nodes[block_id]
     guard block.kind is Block && block.b > 0 else { break false }
@@ -167,7 +161,7 @@ fn Program::has_bare_return_tail(self : Program, id : Int) -> Bool {
 ///|
 /// Called only after has_bare_return_tail accepted the chain. Copy each block
 /// on that path so other AST owners retain their original statement lists.
-fn Program::without_bare_return_tail(self : Program, id : Int) -> Int {
+fn Program::without_bare_return_tail(self : Program, id : Int32) -> Int32 {
   let block = self.nodes[id]
   let prefix_count = block.b - 1
   let tail_id = self.edges[block.a + prefix_count]

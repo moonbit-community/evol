@@ -119,175 +119,181 @@ priv enum Operator {
 #valtype
 priv struct Node {
   kind : NodeKind
-  a : Int
-  b : Int
-  c : Int
-  d : Int
+  a : Int32
+  b : Int32
+  c : Int32
+  d : Int32
 }
 
 ///|
-fn Node::new(kind : NodeKind, a : Int, b : Int, c : Int, d : Int) -> Node {
+fn Node::new(
+  kind : NodeKind,
+  a : Int32,
+  b : Int32,
+  c : Int32,
+  d : Int32,
+) -> Node {
   { kind, a, b, c, d, }
 }
 
 ///|
-const DECLARATION_VAR : Int = 0
+const DECLARATION_VAR : Int32 = 0
 
 ///|
-const DECLARATION_LET : Int = 1
+const DECLARATION_LET : Int32 = 1
 
 ///|
-const DECLARATION_CONST : Int = 2
+const DECLARATION_CONST : Int32 = 2
 
 ///|
-const METHOD_ORDINARY : Int = 0
+const METHOD_ORDINARY : Int32 = 0
 
 ///|
-const METHOD_GETTER : Int = 1
+const METHOD_GETTER : Int32 = 1
 
 ///|
-const METHOD_SETTER : Int = 2
+const METHOD_SETTER : Int32 = 2
 
 ///|
-const CLASS_MEMBER_STATIC : Int = 1
+const CLASS_MEMBER_STATIC : Int32 = 1
 
 ///|
-const CLASS_MEMBER_COMPUTED : Int = 2
+const CLASS_MEMBER_COMPUTED : Int32 = 2
 
 ///|
-const PROPERTY_COMPUTED : Int = 1
+const PROPERTY_COMPUTED : Int32 = 1
 
 ///|
-const PROPERTY_SHORTHAND : Int = 1
+const PROPERTY_SHORTHAND : Int32 = 1
 
 ///|
-const CHAIN_OPTIONAL : Int = 1
+const CHAIN_OPTIONAL : Int32 = 1
 
 ///|
-const MEMBER_NEW_TARGET : Int = 2
+const MEMBER_NEW_TARGET : Int32 = 2
 
 ///|
-const UPDATE_PREFIX : Int = 1
+const UPDATE_PREFIX : Int32 = 1
 
 ///|
-const UPDATE_POSTFIX : Int = 0
+const UPDATE_POSTFIX : Int32 = 0
 
 ///|
 #valtype
 priv struct Function {
-  name : Int
-  parameters_offset : Int
-  parameters_count : Int
-  body : Int
-  flags : Int
+  name : Int32
+  parameters_offset : Int32
+  parameters_count : Int32
+  body : Int32
+  flags : Int32
 }
 
 ///|
-const FUNCTION_ASYNC : Int = 1
+const FUNCTION_ASYNC : Int32 = 1
 
 ///|
-const FUNCTION_GENERATOR : Int = 2
+const FUNCTION_GENERATOR : Int32 = 2
 
 ///|
-const FUNCTION_ARROW : Int = 4
+const FUNCTION_ARROW : Int32 = 4
 
 ///|
-const FUNCTION_EXPRESSION_BODY : Int = 8
+const FUNCTION_EXPRESSION_BODY : Int32 = 8
 
 ///|
 #valtype
 priv struct Class {
-  name : Int
-  superclass : Int
-  members_offset : Int
-  members_count : Int
+  name : Int32
+  superclass : Int32
+  members_offset : Int32
+  members_count : Int32
 }
 
 ///|
 #valtype
 priv struct Reference {
-  scope : Int
-  name_start : Int
-  name_end : Int
-  name : Int
-  symbol : Int
+  scope : Int32
+  name_start : Int32
+  name_end : Int32
+  name : Int32
+  symbol : Int32
 }
 
 ///|
 #valtype
 priv struct Symbol {
-  name : Int
-  scope : Int
-  flags : Int
-  link : Int
-  use_count : Int
-  name_slot : Int
+  name : Int32
+  scope : Int32
+  flags : Int32
+  link : Int32
+  use_count : Int32
+  name_slot : Int32
 }
 
 ///|
-const SYMBOL_PRESERVED : Int = 1
+const SYMBOL_PRESERVED : Int32 = 1
 
 ///|
-const SYMBOL_ELIDED : Int = 2
+const SYMBOL_ELIDED : Int32 = 2
 
 ///|
 #valtype
 priv struct Scope {
-  parent : Int
-  kind : Int
+  parent : Int32
+  kind : Int32
 }
 
 ///|
-const SCOPE_MODULE : Int = 0
+const SCOPE_MODULE : Int32 = 0
 
 ///|
-const SCOPE_FUNCTION : Int = 1
+const SCOPE_FUNCTION : Int32 = 1
 
 ///|
-const SCOPE_BLOCK : Int = 2
+const SCOPE_BLOCK : Int32 = 2
 
 ///|
-const SCOPE_CATCH : Int = 3
+const SCOPE_CATCH : Int32 = 3
 
 ///|
-const SCOPE_CLASS : Int = 4
+const SCOPE_CLASS : Int32 = 4
 
 ///|
-const SCOPE_PARAMETERS : Int = 5
+const SCOPE_PARAMETERS : Int32 = 5
 
 ///|
-const SCOPE_ARROW_PARAMETERS : Int = 6
+const SCOPE_ARROW_PARAMETERS : Int32 = 6
 
 ///|
-const SCOPE_TRANSPARENT : Int = 7
+const SCOPE_TRANSPARENT : Int32 = 7
 
 ///|
-const SCOPE_SWITCH : Int = 8
+const SCOPE_SWITCH : Int32 = 8
 
 ///|
 priv struct Program {
   source : String
   nodes : Array[Node]
-  edges : Array[Int]
+  edges : Array[Int32]
   references : Array[Reference]
   symbols : Array[Symbol]
   scopes : Array[Scope]
-  scope_members : Array[Map[Int, Int]]
+  scope_members : Array[Map[Int32, Int32]]
   functions : Array[Function]
   classes : Array[Class]
   operators : Array[Operator]
   modules : Array[ModuleStatement]
-  mut root : Int
-  preserved_names : Map[Int, Bool]
+  mut root : Int32
+  preserved_names : Map[Int32, Bool]
   names : Array[String]
   generated_names : Array[String]
   identifier_ids : IdentifierTable
   mut has_dynamic_scope : Bool
-  mut cover_defaults : Int
-  character_counts : FixedArray[Int]
+  mut cover_defaults : Int32
+  character_counts : FixedArray[Int32]
   mut alphabet : NameAlphabet
-  property_names : Map[Int, String]
-  member_names : Map[Int, String]
+  property_names : Map[Int32, String]
+  member_names : Map[Int32, String]
   property_reserved : @hashset.HashSet[String]
 }
 
@@ -326,23 +332,23 @@ fn Program::new(source : String) -> Program {
 fn Program::node(
   self : Program,
   kind : NodeKind,
-  a : Int,
-  b : Int,
-  c : Int,
-  d : Int,
-) -> Int {
+  a : Int32,
+  b : Int32,
+  c : Int32,
+  d : Int32,
+) -> Int32 {
   self.nodes.push(Node::new(kind, a, b, c, d))
   self.nodes.length() - 1
 }
 
 ///|
-fn Program::add_reference(self : Program, reference : Reference) -> Int {
+fn Program::add_reference(self : Program, reference : Reference) -> Int32 {
   self.references.push(reference)
   self.references.length() - 1
 }
 
 ///|
-fn Program::add_operator(self : Program, operator : Operator) -> Int {
+fn Program::add_operator(self : Program, operator : Operator) -> Int32 {
   self.operators.push(operator)
   self.operators.length() - 1
 }
@@ -359,7 +365,7 @@ fn Program::edge_list(self : Program, items : PendingEdges) -> EdgeRange {
 }
 
 ///|
-fn Program::push_scope(self : Program, parent : Int, kind : Int) -> Int {
+fn Program::push_scope(self : Program, parent : Int32, kind : Int32) -> Int32 {
   self.scope_members.push(Map([]))
   self.scopes.push({ parent, kind, })
   self.scopes.length() - 1
@@ -368,10 +374,10 @@ fn Program::push_scope(self : Program, parent : Int, kind : Int) -> Int {
 ///|
 fn Program::add_symbol(
   self : Program,
-  name_start : Int,
-  name_end : Int,
-  scope : Int,
-) -> Int raise ParseError {
+  name_start : Int32,
+  name_end : Int32,
+  scope : Int32,
+) -> Int32 raise ParseError {
   let name = self.identifier(name_start, name_end)
   guard self.scope_members[scope].get(name) is Some(id) else {
     let id = self.symbols.length()
@@ -392,7 +398,7 @@ fn Program::add_symbol(
 ///|
 /// Symbols linked here must keep the same spelling even when JavaScript creates
 /// distinct bindings (for example, a catch parameter and a hoisted var).
-fn Program::symbol_root(self : Program, id : Int) -> Int {
+fn Program::symbol_root(self : Program, id : Int32) -> Int32 {
   for current = id {
     let next = self.symbols[current].link
     guard next >= 0 else { break current }
@@ -401,7 +407,7 @@ fn Program::symbol_root(self : Program, id : Int) -> Int {
 }
 
 ///|
-fn Program::link_symbols(self : Program, left : Int, right : Int) -> Unit {
+fn Program::link_symbols(self : Program, left : Int32, right : Int32) -> Unit {
   let left_root = self.symbol_root(left)
   let right_root = self.symbol_root(right)
   guard left_root != right_root else { return }
@@ -409,25 +415,25 @@ fn Program::link_symbols(self : Program, left : Int, right : Int) -> Unit {
 }
 
 ///|
-const NAME_ARGUMENTS : Int = 0
+const NAME_ARGUMENTS : Int32 = 0
 
 ///|
-const NAME_EVAL : Int = 1
+const NAME_EVAL : Int32 = 1
 
 ///|
-const NAME_PROTO : Int = 2
+const NAME_PROTO : Int32 = 2
 
 ///|
-const NAME_UNDEFINED : Int = 3
+const NAME_UNDEFINED : Int32 = 3
 
 ///|
 /// Intern source views without copying ordinary identifiers on each reference.
 /// Escaped spellings and literal spellings share the same canonical identity.
 fn Program::identifier(
   self : Program,
-  start : Int,
-  end : Int,
-) -> Int raise ParseError {
+  start : Int32,
+  end : Int32,
+) -> Int32 raise ParseError {
   let spelling = self.source[start:end]
   let hash = identifier_hash(spelling)
   guard self.identifier_ids.get_hashed(spelling, hash) is Some(id) else {
@@ -440,8 +446,8 @@ fn Program::identifier(
 fn Program::intern_identifier(
   self : Program,
   spelling : StringView,
-  hash : Int,
-) -> Int raise ParseError {
+  hash : Int32,
+) -> Int32 raise ParseError {
   let start = spelling.start_offset()
   let end = start + spelling.length()
   let escaped = spelling.contains_code_unit('\\')
@@ -471,6 +477,6 @@ fn Program::intern_identifier(
 ///|
 #valtype
 priv struct EdgeRange {
-  offset : Int
-  count : Int
+  offset : Int32
+  count : Int32
 }

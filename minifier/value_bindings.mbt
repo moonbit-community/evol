@@ -1,13 +1,12 @@
 ///|
 priv struct ValueBindings {
   program : Program
-  rename_top_level : Bool
-  declarations : Array[Int]
+  declarations : Array[Int32]
   functions : Array[Bool]
   has_writes : Array[Bool]
-  alias_declarations : Array[Int]
-  function_value_declarations : Array[Int]
-  call_write_targets : Array[Int]
+  alias_declarations : Array[Int32]
+  function_value_declarations : Array[Int32]
+  call_write_targets : Array[Int32]
 }
 
 ///|
@@ -17,7 +16,6 @@ fn ValueBindings::new(
 ) -> ValueBindings {
   let bindings = {
     program,
-    rename_top_level,
     declarations: Array::make(program.symbols.length(), -1),
     functions: Array::make(program.symbols.length(), false),
     has_writes: Array::make(program.symbols.length(), false),
@@ -100,7 +98,7 @@ fn ValueBindings::new(
 ///|
 fn ValueBindings::mark_conditional_function(
   self : ValueBindings,
-  id : Int,
+  id : Int32,
 ) -> Unit {
   guard id >= 0 else { return }
   let declaration = self.program.nodes[id]
@@ -115,9 +113,9 @@ fn ValueBindings::mark_conditional_function(
 ///|
 fn ValueBindings::initialized_read(
   self : ValueBindings,
-  id : Int,
-  before : Int,
-  scope : Int,
+  id : Int32,
+  before : Int32,
+  scope : Int32,
 ) -> Bool {
   let program = self.program
   let symbol = program.identifier_symbol(id)
@@ -159,7 +157,7 @@ fn ValueBindings::initialized_read(
 /// These expressions may read or throw, but cannot change preceding values.
 /// Member access and coercing operators are excluded because they can invoke
 /// user code. Allocation alone does not make an object literal observable.
-fn ValueBindings::has_no_side_effects(self : ValueBindings, id : Int) -> Bool {
+fn ValueBindings::has_no_side_effects(self : ValueBindings, id : Int32) -> Bool {
   let program = self.program
   guard id >= 0 else { return true }
   let node = program.nodes[id]
@@ -222,9 +220,9 @@ fn ValueBindings::has_no_side_effects(self : ValueBindings, id : Int) -> Bool {
 /// after an effect-free read even when that read could throw for an outer TDZ.
 fn ValueBindings::is_inert_initializer(
   self : ValueBindings,
-  id : Int,
-  before : Int,
-  scope : Int,
+  id : Int32,
+  before : Int32,
+  scope : Int32,
 ) -> Bool {
   guard id >= 0 else { return false }
   let node = self.program.nodes[id]
@@ -246,7 +244,7 @@ fn ValueBindings::is_inert_initializer(
 }
 
 ///|
-fn ValueBindings::mark_written(self : ValueBindings, id : Int) -> Unit {
+fn ValueBindings::mark_written(self : ValueBindings, id : Int32) -> Unit {
   guard id >= 0 else { return }
   let program = self.program
   let node = program.nodes[id]
@@ -278,9 +276,9 @@ fn ValueBindings::mark_written(self : ValueBindings, id : Int) -> Unit {
 /// lexical constants must already be initialized in this execution frame.
 fn ValueBindings::stable_prefix(
   self : ValueBindings,
-  id : Int,
-  before : Int,
-  scope : Int,
+  id : Int32,
+  before : Int32,
+  scope : Int32,
 ) -> Bool {
   let program = self.program
   let node = program.nodes[program.unwrapped_expression(id)]
@@ -325,7 +323,7 @@ fn ValueBindings::inline_aliases(
 ) -> Unit {
   let program = self.program
   let aliases = Array::make(program.symbols.length(), -1)
-  let removed : Array[Int] = []
+  let removed : Array[Int32] = []
   for id in self.alias_declarations {
     let declaration = program.nodes[id]
     guard declaration.kind is VariableDeclaration else { continue }
@@ -385,22 +383,30 @@ fn ValueBindings::inline_aliases(
 }
 
 ///|
+priv enum InitializerEffects {
+  Unchecked
+  Inert
+  ReadOnly
+  MayChange
+}
+
+///|
 priv struct ValueMovement {
   bindings : ValueBindings
-  symbol : Int
-  before : Int
-  scope : Int
-  initializer_has_no_effects : Bool
-  initializer_is_inert : Bool
+  symbol : Int32
+  before : Int32
+  scope : Int32
+  initializer : Int32
+  mut initializer_effects : InitializerEffects
   mut detach_receiver : Bool
 }
 
 ///|
 fn ValueMovement::new(
   bindings : ValueBindings,
-  symbol : Int,
-  before : Int,
-  initializer : Int,
+  symbol : Int32,
+  before : Int32,
+  initializer : Int32,
 ) -> ValueMovement {
   let scope = bindings.program.symbols[symbol].scope
   {
@@ -408,23 +414,36 @@ fn ValueMovement::new(
     symbol,
     before,
     scope,
-    initializer_has_no_effects: initializer >= 0 &&
-    bindings.has_no_side_effects(initializer),
-    initializer_is_inert: bindings.is_inert_initializer(
-      initializer, before, scope,
-    ),
+    initializer,
+    initializer_effects: Unchecked,
     detach_receiver: false,
   }
 }
 
 ///|
-fn ValueMovement::can_cross_read(self : ValueMovement, id : Int) -> Bool {
-  if self.initializer_is_inert && self.bindings.has_no_side_effects(id) {
-    return true
-  }
-  if self.initializer_has_no_effects {
-    self.bindings.initialized_read(id, self.before, self.scope)
-  } else {
-    self.bindings.stable_prefix(id, self.before, self.scope)
+fn ValueMovement::can_cross_read(self : ValueMovement, id : Int32) -> Bool {
+  match self.initializer_effects {
+    // A direct leading use needs no classification. Cache it only when the
+    // search must cross another read, while the expression arena is unchanged.
+    Unchecked => {
+      self.initializer_effects = if self.bindings.is_inert_initializer(
+          self.initializer,
+          self.before,
+          self.scope,
+        ) {
+        Inert
+      } else if self.initializer >= 0 &&
+        self.bindings.has_no_side_effects(self.initializer) {
+        ReadOnly
+      } else {
+        MayChange
+      }
+      self.can_cross_read(id)
+    }
+    Inert =>
+      self.bindings.has_no_side_effects(id) ||
+      self.bindings.initialized_read(id, self.before, self.scope)
+    ReadOnly => self.bindings.initialized_read(id, self.before, self.scope)
+    MayChange => self.bindings.stable_prefix(id, self.before, self.scope)
   }
 }

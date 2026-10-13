@@ -60,7 +60,7 @@ fn Program::compact_patterns(self : Program, rename_top_level : Bool) -> Unit {
 }
 
 ///|
-fn Program::identifier_symbol(self : Program, id : Int) -> Int {
+fn Program::identifier_symbol(self : Program, id : Int32) -> Int32 {
   guard id >= 0 else { return -1 }
   let node = self.nodes[self.unwrapped_expression(id)]
   guard node.kind is (Identifier | PatternIdentifier) else { return -1 }
@@ -68,7 +68,7 @@ fn Program::identifier_symbol(self : Program, id : Int) -> Int {
 }
 
 ///|
-fn Program::result_slot(self : Program, declaration : Int) -> Int {
+fn Program::result_slot(self : Program, declaration : Int32) -> Int32 {
   let node = self.nodes[declaration]
   guard node.kind is VariableDeclaration &&
     node.a == DECLARATION_LET &&
@@ -87,7 +87,7 @@ fn Program::result_slot(self : Program, declaration : Int) -> Int {
 }
 
 ///|
-fn Program::single_statement(self : Program, id : Int) -> Int {
+fn Program::single_statement(self : Program, id : Int32) -> Int32 {
   for current = id {
     let node = self.nodes[current]
     guard node.kind is Block && node.b == 1 else { break current }
@@ -98,9 +98,9 @@ fn Program::single_statement(self : Program, id : Int) -> Int {
 ///|
 fn Program::slot_assignment(
   self : Program,
-  statement : Int,
-  symbol : Int,
-) -> Int {
+  statement : Int32,
+  symbol : Int32,
+) -> Int32 {
   let node = self.nodes[self.single_statement(statement)]
   if node.kind is Block && node.b > 0 {
     for index in 0..<(node.b - 1) {
@@ -128,9 +128,9 @@ fn Program::slot_assignment(
 ///|
 fn Program::slot_assignment_value(
   self : Program,
-  statement : Int,
-  symbol : Int,
-) -> Int {
+  statement : Int32,
+  symbol : Int32,
+) -> Int32 {
   let node = self.nodes[self.single_statement(statement)]
   guard node.kind is Block else {
     let value = self.slot_assignment(statement, symbol)
@@ -151,7 +151,7 @@ fn Program::slot_assignment_value(
 }
 
 ///|
-fn Program::sequence_tail(self : Program, id : Int) -> Int {
+fn Program::sequence_tail(self : Program, id : Int32) -> Int32 {
   for expression = self.unwrapped_expression(id) {
     let node = self.nodes[expression]
     guard node.kind is Sequence && node.b > 0 else { break expression }
@@ -162,9 +162,9 @@ fn Program::sequence_tail(self : Program, id : Int) -> Int {
 ///|
 fn Program::slot_branch_writes(
   self : Program,
-  statement : Int,
-  symbol : Int,
-) -> Int {
+  statement : Int32,
+  symbol : Int32,
+) -> Int32 {
   let id = self.single_statement(statement)
   let node = self.nodes[id]
   guard node.kind is If && node.c >= 0 else {
@@ -181,10 +181,10 @@ fn Program::slot_branch_writes(
 ///|
 fn Program::compact_result_slots(
   self : Program,
-  offset : Int,
-  count : Int,
+  offset : Int32,
+  count : Int32,
   bindings : ValueBindings,
-) -> Int {
+) -> Int32 {
   for read = 0, kept = 0 {
     guard read < count else { break kept }
     let declaration = self.edges[offset + read]
@@ -209,9 +209,9 @@ fn Program::compact_result_slots(
 ///|
 fn Program::fold_result_slot(
   self : Program,
-  producer : Int,
-  consumer : Int,
-  slot : Int,
+  producer : Int32,
+  consumer : Int32,
+  slot : Int32,
   bindings : ValueBindings,
 ) -> Bool {
   let node = self.nodes[producer]
@@ -244,11 +244,102 @@ fn Program::fold_result_slot(
 }
 
 ///|
+/// Keep an early return outside the consumer: its value does not flow through
+/// the expression that consumes the successful branch's assigned value.
+fn Program::fold_returning_result_slot(
+  self : Program,
+  producer : Int32,
+  consumer : Int32,
+  statements : Int32,
+  producer_index : Int32,
+  bindings : ValueBindings,
+) -> Bool {
+  let branch = self.nodes[producer]
+  let following = self.nodes[consumer]
+  guard branch.c >= 0 && following.kind is Return && following.a >= 0 else {
+    return false
+  }
+  let consequent = self.nodes[self.single_statement(branch.b)]
+  let alternative = self.nodes[self.single_statement(branch.c)]
+  let returns_on_true = consequent.kind is Return && consequent.a >= 0
+  let returns_on_false = alternative.kind is Return && alternative.a >= 0
+  guard returns_on_true != returns_on_false else { return false }
+  let assignment = if returns_on_true { branch.c } else { branch.b }
+  let slot = self.slot_assignment_symbol(assignment)
+  guard slot >= 0 else { return false }
+  let declaration = bindings.declarations[slot]
+  guard declaration >= 0 && self.result_slot(declaration) == slot else {
+    return false
+  }
+  let entry = self.symbols[slot]
+  guard entry.use_count == 3 &&
+    self.scopes[entry.scope].kind != SCOPE_SWITCH &&
+    !self.preserved_names.contains(entry.name) else {
+    return false
+  }
+  guard self.slot_assignment(assignment, slot) >= 0 else { return false }
+  let movement = ValueMovement::new(bindings, slot, producer, -1)
+  let reference = self.leading_value_read(following.a, movement)
+  guard reference >= 0 &&
+    self.references[self.nodes[reference].a].scope == entry.scope else {
+    return false
+  }
+  // Only an earlier declaration in this exact statement list is removable.
+  // This also excludes for headers and bindings owned by enclosing blocks.
+  let declared_here = for previous = producer_index - 1 {
+    guard previous >= 0 else { break false }
+    if self.edges[statements + previous] == declaration {
+      break true
+    }
+    continue previous - 1
+  }
+  guard declared_here else { return false }
+  // Extraction can rewrite the assignment's sequence tail. Perform it only
+  // after proving that the consumer's preceding reads can cross these effects.
+  let assigned_value = self.slot_assignment_value(assignment, slot)
+  let initializer = self.nodes[self.unwrapped_expression(assigned_value)]
+  self.nodes[reference] = if movement.detach_receiver &&
+    initializer.kind is (Identifier | Member | Index) {
+    let zero = self.node(ZeroLiteral, 0, 0, 0, 0)
+    let value = self.sequence_pair(zero, assigned_value)
+    Node::new(Parenthesized, value, 0, 0, 0)
+  } else if reference == following.a || self.is_primary_value(assigned_value) {
+    self.nodes[assigned_value]
+  } else {
+    Node::new(Parenthesized, assigned_value, 0, 0, 0)
+  }
+  let value = if returns_on_true {
+    self.compact_choice(branch.a, consequent.a, following.a)
+  } else {
+    self.compact_choice(branch.a, following.a, alternative.a)
+  }
+  self.nodes[consumer] = { ..following, a: value, }
+  self.nodes[declaration] = Node::new(Elided, 0, 0, 0, 0)
+  self.symbols[slot] = { ..entry, flags: entry.flags | SYMBOL_ELIDED, }
+  true
+}
+
+///|
+fn Program::slot_assignment_symbol(self : Program, statement : Int32) -> Int32 {
+  let node = self.nodes[self.single_statement(statement)]
+  if node.kind is Block && node.b > 0 {
+    return self.slot_assignment_symbol(self.edges[node.a + node.b - 1])
+  }
+  guard node.kind is ExpressionStatement else { return -1 }
+  let tail = self.nodes[self.sequence_tail(node.a)]
+  guard tail.kind is Assignment &&
+    self.operators[tail.a] is Operator::Assignment else {
+    return -1
+  }
+  self.identifier_symbol(tail.b)
+}
+
+///|
 fn Program::slot_branch_value(
   self : Program,
-  statement : Int,
-  slot : Int,
-) -> Int {
+  statement : Int32,
+  slot : Int32,
+) -> Int32 {
   let id = self.single_statement(statement)
   let node = self.nodes[id]
   guard node.kind is If else { return self.slot_assignment_value(id, slot) }
@@ -258,7 +349,7 @@ fn Program::slot_branch_value(
 }
 
 ///|
-fn Program::is_boolean_value(self : Program, id : Int) -> Bool {
+fn Program::is_boolean_value(self : Program, id : Int32) -> Bool {
   let node = self.nodes[self.unwrapped_expression(id)]
   match node.kind {
     BooleanLiteral => true
@@ -285,7 +376,7 @@ fn Program::is_boolean_value(self : Program, id : Int) -> Bool {
 }
 
 ///|
-fn Program::boolean_literal(self : Program, id : Int, value : Bool) -> Bool {
+fn Program::boolean_literal(self : Program, id : Int32, value : Bool) -> Bool {
   let node = self.nodes[self.unwrapped_expression(id)]
   node.kind is BooleanLiteral && (node.a == 1) == value
 }
@@ -293,10 +384,10 @@ fn Program::boolean_literal(self : Program, id : Int, value : Bool) -> Bool {
 ///|
 fn Program::compact_choice(
   self : Program,
-  condition : Int,
-  consequent : Int,
-  alternative : Int,
-) -> Int {
+  condition : Int32,
+  consequent : Int32,
+  alternative : Int32,
+) -> Int32 {
   let consequent_is_true = self.boolean_literal(consequent, true)
   let alternative_is_false = self.boolean_literal(alternative, false)
   let consequent_is_false = self.boolean_literal(consequent, false)
@@ -344,9 +435,9 @@ priv enum SlotOperand {
 ///|
 fn Program::slot_operand(
   self : Program,
-  id : Int,
+  id : Int32,
   context : SlotOperand,
-) -> Int {
+) -> Int32 {
   guard self.slot_needs_parentheses(id, context) else { return id }
   self.node(Parenthesized, id, 0, 0, 0)
 }
@@ -354,7 +445,7 @@ fn Program::slot_operand(
 ///|
 fn Program::slot_needs_parentheses(
   self : Program,
-  id : Int,
+  id : Int32,
   context : SlotOperand,
 ) -> Bool {
   let node = self.nodes[id]
@@ -378,16 +469,16 @@ fn Program::slot_needs_parentheses(
 fn Program::slot_logical(
   self : Program,
   operator : Operator,
-  left : Int,
-  right : Int,
-) -> Int {
+  left : Int32,
+  right : Int32,
+) -> Int32 {
   let lhs = self.slot_operand(left, LogicalOperand(operator))
   let rhs = self.slot_operand(right, LogicalOperand(operator))
   self.node(Logical, self.add_operator(operator), lhs, rhs, 0)
 }
 
 ///|
-fn Program::slot_case_statements(self : Program, case_id : Int) -> EdgeRange {
+fn Program::slot_case_statements(self : Program, case_id : Int32) -> EdgeRange {
   let clause = self.nodes[case_id]
   for offset = clause.b, count = clause.c {
     guard count == 1 else { break { offset, count, } }
@@ -398,7 +489,7 @@ fn Program::slot_case_statements(self : Program, case_id : Int) -> EdgeRange {
 }
 
 ///|
-fn Program::fold_switch_slot(self : Program, id : Int, slot : Int) -> Bool {
+fn Program::fold_switch_slot(self : Program, id : Int32, slot : Int32) -> Bool {
   let node = self.nodes[id]
   guard node.c > 0 && self.symbols[slot].use_count == node.c + 2 else {
     return false
@@ -431,7 +522,7 @@ fn Program::fold_switch_slot(self : Program, id : Int, slot : Int) -> Bool {
 }
 
 ///|
-fn Program::remove_tail_continue(self : Program, id : Int) -> Unit {
+fn Program::remove_tail_continue(self : Program, id : Int32) -> Unit {
   let node = self.nodes[id]
   match node.kind {
     Block if node.b > 0 => {

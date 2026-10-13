@@ -1,23 +1,23 @@
 ///|
 priv enum ImportBinding {
-  Default(Int)
-  Namespace(Int)
+  Default(Int32)
+  Namespace(Int32)
   // Original imported name node and local binding reference.
-  Named(Int, Int)
+  Named(Int32, Int32)
 }
 
 ///|
 priv enum ModuleStatement {
-  Import(Array[ImportBinding], Int, Int)
+  Import(Array[ImportBinding], Int32, Int32)
   // Local expression/original re-export name, followed by the public name.
-  ExportNames(Array[(Int, Int)], Int, Int)
-  ExportAll(Int, Int, Int)
-  ExportDeclaration(Int)
-  ExportDefault(Int)
+  ExportNames(Array[(Int32, Int32)], Int32, Int32)
+  ExportAll(Int32, Int32, Int32)
+  ExportDeclaration(Int32)
+  ExportDefault(Int32)
 }
 
 ///|
-fn Parser::module_node(self : Parser, statement : ModuleStatement) -> Int {
+fn Parser::module_node(self : Parser, statement : ModuleStatement) -> Int32 {
   let index = self.program.modules.length()
   self.program.modules.push(statement)
   self.program.node(ModuleStatement, index, 0, 0, 0)
@@ -35,7 +35,7 @@ fn Parser::expect_keyword(
 }
 
 ///|
-fn Parser::module_name(self : Parser) -> Int raise ParseError {
+fn Parser::module_name(self : Parser) -> Int32 raise ParseError {
   guard self.lexer.token == Identifier || self.lexer.token == StringLiteral else {
     raise self.unexpected("module name")
   }
@@ -43,7 +43,7 @@ fn Parser::module_name(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::import_binding(self : Parser) -> Int raise ParseError {
+fn Parser::import_binding(self : Parser) -> Int32 raise ParseError {
   guard self.lexer.token == Identifier else {
     raise self.unexpected("import binding")
   }
@@ -53,7 +53,7 @@ fn Parser::import_binding(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::module_source(self : Parser) -> Int raise ParseError {
+fn Parser::module_source(self : Parser) -> Int32 raise ParseError {
   guard self.lexer.token == StringLiteral else {
     raise self.unexpected("module source string")
   }
@@ -61,14 +61,14 @@ fn Parser::module_source(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::import_attributes(self : Parser) -> Int raise ParseError {
+fn Parser::import_attributes(self : Parser) -> Int32 raise ParseError {
   guard self.lexer.keyword == Keyword::With else { return -1 }
   self.advance()
   self.object_literal()
 }
 
 ///|
-fn Parser::parse_import(self : Parser) -> Int raise ParseError {
+fn Parser::parse_import(self : Parser) -> Int32 raise ParseError {
   guard self.scope == 0 else {
     raise self.syntax_error("import must be at module top level")
   }
@@ -132,7 +132,7 @@ fn Parser::named_import_bindings(
 }
 
 ///|
-fn Parser::parse_export(self : Parser) -> Int raise ParseError {
+fn Parser::parse_export(self : Parser) -> Int32 raise ParseError {
   guard self.scope == 0 else {
     raise self.syntax_error("export must be at module top level")
   }
@@ -180,7 +180,7 @@ fn Parser::namespace_export(self : Parser) -> ModuleStatement raise ParseError {
 ///|
 fn Parser::named_export(self : Parser) -> ModuleStatement raise ParseError {
   self.advance()
-  let names : Array[(Int, Int)] = []
+  let names : Array[(Int32, Int32)] = []
   while self.lexer.token != RightBrace {
     let source_name = self.module_name()
     let exported = if self.lexer.keyword == Keyword::As {
@@ -228,7 +228,7 @@ fn Parser::export_declaration(
 
 ///|
 /// Direct export declarations expose their binding spelling as the public name.
-fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
+fn Parser::preserve_exported_names(self : Parser, id : Int32) -> Unit {
   let node = self.program.nodes[id]
   match node.kind {
     PatternIdentifier => {
@@ -271,8 +271,8 @@ fn Parser::preserve_exported_names(self : Parser, id : Int) -> Unit {
 ///|
 fn Printer::module_source(
   self : Printer,
-  source : Int,
-  attributes : Int,
+  source : Int32,
+  attributes : Int32,
 ) -> Unit {
   self.expression(source)
   guard attributes >= 0 else { return }
@@ -281,7 +281,7 @@ fn Printer::module_source(
 }
 
 ///|
-fn Printer::module_stmt(self : Printer, index : Int) -> Unit {
+fn Printer::module_stmt(self : Printer, index : Int32) -> Unit {
   match self.program.modules[index] {
     Import(bindings, source, attributes) =>
       self.import_statement(bindings, source, attributes)
@@ -305,8 +305,8 @@ fn Printer::module_stmt(self : Printer, index : Int) -> Unit {
 fn Printer::import_statement(
   self : Printer,
   bindings : Array[ImportBinding],
-  source : Int,
-  attributes : Int,
+  source : Int32,
+  attributes : Int32,
 ) -> Unit {
   self.text("import", true)
   self.import_bindings(bindings)
@@ -359,9 +359,9 @@ fn Printer::import_bindings(
 ///|
 fn Printer::named_export_statement(
   self : Printer,
-  specifiers : Array[(Int, Int)],
-  source : Int,
-  attributes : Int,
+  specifiers : Array[(Int32, Int32)],
+  source : Int32,
+  attributes : Int32,
 ) -> Unit {
   self.text("export", true)
   self.text("{", false)
@@ -385,9 +385,9 @@ fn Printer::named_export_statement(
 ///|
 fn Printer::namespace_export_statement(
   self : Printer,
-  export_name : Int,
-  source : Int,
-  attributes : Int,
+  export_name : Int32,
+  source : Int32,
+  attributes : Int32,
 ) -> Unit {
   self.text("export", true)
   self.text("*", false)

@@ -1,10 +1,10 @@
 ///|
 priv struct InternalCalls {
   program : Program
-  functions : Array[Int]
-  direct_uses : Array[Int]
-  argument_observers : @hashset.HashSet[Int]
-  trailing_undefined_calls : Array[Int]
+  functions : Array[Int32]
+  direct_uses : Array[Int32]
+  argument_observers : @hashset.HashSet[Int32]
+  trailing_undefined_calls : Array[Int32]
   is_module : Bool
   rename_top_level : Bool
   strict_top_level : Bool
@@ -34,7 +34,7 @@ fn InternalCalls::new(
 ///|
 fn InternalCalls::collect_node(
   self : InternalCalls,
-  id : Int,
+  id : Int32,
   node : Node,
 ) -> Unit {
   let program = self.program
@@ -94,8 +94,8 @@ fn InternalCalls::finish(self : InternalCalls) -> Unit {
 ///|
 fn InternalCalls::register_function(
   self : InternalCalls,
-  symbol : Int,
-  function_id : Int,
+  symbol : Int32,
+  function_id : Int32,
 ) -> Unit {
   let program = self.program
   let function = program.functions[function_id]
@@ -115,7 +115,7 @@ fn InternalCalls::register_function(
 }
 
 ///|
-fn Program::has_strict_directive(self : Program, id : Int) -> Bool {
+fn Program::has_strict_directive(self : Program, id : Int32) -> Bool {
   let body = self.nodes[id]
   guard body.kind is Block else { return false }
   for index in 0..<body.b {
@@ -134,7 +134,7 @@ fn Program::has_strict_directive(self : Program, id : Int) -> Bool {
 ///|
 fn InternalCalls::collect_call(
   self : InternalCalls,
-  id : Int,
+  id : Int32,
   call : Node,
 ) -> Unit {
   let program = self.program
@@ -152,7 +152,10 @@ fn InternalCalls::collect_call(
 
 ///|
 /// Ordinary functions own arguments; nested arrows inherit that same object.
-fn InternalCalls::observe_arguments(self : InternalCalls, scope : Int) -> Unit {
+fn InternalCalls::observe_arguments(
+  self : InternalCalls,
+  scope : Int32,
+) -> Unit {
   for current = scope {
     guard current >= 0 else { break }
     let environment = self.program.scopes[current]
@@ -167,7 +170,7 @@ fn InternalCalls::observe_arguments(self : InternalCalls, scope : Int) -> Unit {
 ///|
 fn InternalCalls::ignores_argument_count(
   self : InternalCalls,
-  function_id : Int,
+  function_id : Int32,
 ) -> Bool {
   let program = self.program
   let function = program.functions[function_id]
@@ -190,11 +193,12 @@ fn InternalCalls::ignores_argument_count(
 }
 
 ///|
-fn InternalCalls::trim_call(self : InternalCalls, id : Int) -> Unit {
+fn InternalCalls::trim_call(self : InternalCalls, id : Int32) -> Unit {
   let program = self.program
   let call = program.nodes[id]
   guard call.kind is Call else { return }
   let callee = program.nodes[program.unwrapped_expression(call.a)]
+  guard callee.kind is Identifier else { return }
   let symbol = program.references[callee.a].symbol
   let function_id = self.functions[symbol]
   guard function_id >= 0 &&

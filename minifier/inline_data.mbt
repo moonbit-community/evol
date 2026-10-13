@@ -1,7 +1,7 @@
 ///|
 /// A static data value cannot read, call or throw during initialization.
 /// Moving its allocation to its only read therefore preserves object identity.
-fn Program::is_static_data_value(self : Program, id : Int) -> Bool {
+fn Program::is_static_data_value(self : Program, id : Int32) -> Bool {
   guard id >= 0 else { return false }
   let node = self.nodes[self.unwrapped_expression(id)]
   match node.kind {
@@ -86,8 +86,8 @@ fn ValueBindings::inline_data_values(
 /// targets, delete operands and shorthand keys retain their original bindings.
 fn ValueBindings::inline_data_expression(
   self : ValueBindings,
-  id : Int,
-  available : Array[Int],
+  id : Int32,
+  available : Array[Int32],
   needs_primary : Bool,
 ) -> Unit {
   guard id >= 0 else { return }
@@ -156,9 +156,9 @@ fn ValueBindings::inline_data_expression(
 ///|
 fn ValueBindings::inline_data_list(
   self : ValueBindings,
-  offset : Int,
-  count : Int,
-  available : Array[Int],
+  offset : Int32,
+  count : Int32,
+  available : Array[Int32],
   needs_primary : Bool,
 ) -> Unit {
   for index in 0..<count {

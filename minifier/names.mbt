@@ -11,13 +11,13 @@ const NAME_FIRST : String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY
 const NAME_REST : String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$0123456789"
 
 ///|
-const ASCII_CHARACTER_COUNT : Int = 128
+const ASCII_CHARACTER_COUNT : Int32 = 128
 
 ///|
 priv struct NameGenerator {
   alphabet : NameAlphabet
   reserved : @hashset.HashSet[String]
-  mut index : Int
+  mut index : Int32
 }
 
 ///|
@@ -42,10 +42,10 @@ fn NameGenerator::next_name(self : NameGenerator) -> String {
 /// Count source characters directly; alphabet selection filters identifier chars.
 fn count_characters(
   source : String,
-  start : Int,
-  end : Int,
-  counts : FixedArray[Int],
-  delta : Int,
+  start : Int32,
+  end : Int32,
+  counts : FixedArray[Int32],
+  delta : Int32,
 ) -> Unit {
   for index in start..<end {
     let character = source[index].to_int()
@@ -61,7 +61,7 @@ fn Program::name_alphabet(program : Program) -> NameAlphabet {
 }
 
 ///|
-fn Program::unchanged_character_counts(program : Program) -> FixedArray[Int] {
+fn Program::unchanged_character_counts(program : Program) -> FixedArray[Int32] {
   let counts = program.character_counts.copy()
   // A source token may represent both a shorthand key and a reference.
   // Decide removals first, then count each remaining deferred spelling once.
@@ -111,17 +111,21 @@ fn Program::unchanged_character_counts(program : Program) -> FixedArray[Int] {
 }
 
 ///|
-fn deferred_identifier_span(source : String, start : Int, end : Int) -> Bool {
+fn deferred_identifier_span(
+  source : String,
+  start : Int32,
+  end : Int32,
+) -> Bool {
   guard start < end else { return false }
   match source[start] {
-    '\'' | '"' | '`' | '#' | '.' | '0'..='9' => false
+    '\'' | '"' | '`' | '#' | '.' | '0'..<='9' => false
     _ =>
       keyword_of(source.view(start_offset=start, end_offset=end)) is NotKeyword
   }
 }
 
 ///|
-fn mark_position(positions : FixedArray[UInt], start : Int) -> Bool {
+fn mark_position(positions : FixedArray[UInt32], start : Int32) -> Bool {
   let word_index = start / 32
   let position_mask = 1U << (start % 32)
   let word = positions[word_index]
@@ -131,7 +135,7 @@ fn mark_position(positions : FixedArray[UInt], start : Int) -> Bool {
 }
 
 ///|
-fn alphabet_by_frequency(counts : FixedArray[Int]) -> NameAlphabet {
+fn alphabet_by_frequency(counts : FixedArray[Int32]) -> NameAlphabet {
   let order = Array::makei(NAME_REST.length(), index => index)
   order.sort_by((left, right) => {
     let difference = counts[NAME_REST[right].to_int()] -

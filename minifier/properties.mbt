@@ -3,10 +3,10 @@ priv struct PropertyAnalysis {
   program : Program
   allowed : @hashset.HashSet[String]
   pinned : @hashset.HashSet[String]
-  keys : Map[Int, String]
-  members : Map[Int, String]
-  literals : @hashset.HashSet[Int]
-  class_methods : @hashset.HashSet[Int]
+  keys : Map[Int32, String]
+  members : Map[Int32, String]
+  literals : @hashset.HashSet[Int32]
+  class_methods : @hashset.HashSet[Int32]
   quoted_names : Map[StringView, String?]
 }
 
@@ -37,7 +37,7 @@ fn PropertyAnalysis::new(
 }
 
 ///|
-fn Program::class_method_ids(self : Program) -> @hashset.HashSet[Int] {
+fn Program::class_method_ids(self : Program) -> @hashset.HashSet[Int32] {
   let methods = @hashset.HashSet([])
   for class in self.classes {
     for index in 0..<class.members_count {
@@ -52,8 +52,8 @@ fn Program::class_method_ids(self : Program) -> @hashset.HashSet[Int] {
 ///|
 fn PropertyAnalysis::quoted_name(
   self : PropertyAnalysis,
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
 ) -> String? {
   let spelling = self.program.source[start:end]
   guard self.quoted_names.get(spelling) is Some(name) else {
@@ -67,7 +67,7 @@ fn PropertyAnalysis::quoted_name(
 ///|
 fn PropertyAnalysis::key_name(
   self : PropertyAnalysis,
-  id : Int,
+  id : Int32,
   computed : Bool,
 ) -> String? raise ParseError {
   let program = self.program
@@ -89,7 +89,7 @@ fn PropertyAnalysis::key_name(
 ///|
 fn PropertyAnalysis::collect_key(
   self : PropertyAnalysis,
-  id : Int,
+  id : Int32,
   computed : Bool,
 ) -> Unit raise ParseError {
   guard self.key_name(id, computed) is Some(name) else { return }
@@ -171,8 +171,8 @@ fn PropertyAnalysis::preserve_attributes(self : PropertyAnalysis) -> Unit {
 ///|
 fn PropertyAnalysis::select(
   self : PropertyAnalysis,
-  uses : Map[Int, String],
-  selected : Map[Int, String],
+  uses : Map[Int32, String],
+  selected : Map[Int32, String],
 ) -> Unit {
   for id, name in uses {
     self.program.property_reserved.add(name)
@@ -204,7 +204,7 @@ fn Program::prepare_properties(
 #valtype
 priv struct PropertyFrequency {
   name : String
-  count : Int
+  count : Int32
 }
 
 ///|
@@ -233,9 +233,9 @@ fn Program::mangle_properties(program : Program) -> Unit {
 
 ///|
 fn property_frequencies(
-  groups : Array[Map[Int, String]],
+  groups : Array[Map[Int32, String]],
 ) -> Array[PropertyFrequency] {
-  let counts : Map[String, Int] = Map([])
+  let counts : Map[String, Int32] = Map([])
   for uses in groups {
     for _, name in uses {
       counts[name] = counts.get(name).unwrap_or(0) + 1
@@ -254,7 +254,7 @@ fn property_frequencies(
 }
 
 ///|
-fn Printer::property_expression(self : Printer, id : Int) -> Unit {
+fn Printer::property_expression(self : Printer, id : Int32) -> Unit {
   guard self.program.property_names.get(id) is Some(name) else {
     self.expression(id)
     return

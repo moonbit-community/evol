@@ -1,6 +1,6 @@
 ///|
 priv struct LabelNames {
-  mut active : Array[(Int, String)]
+  mut active : Array[(Int32, String)]
   by_depth : Array[String]
   generator : NameGenerator
 }
@@ -17,9 +17,9 @@ fn LabelNames::new(alphabet : NameAlphabet) -> LabelNames {
 ///|
 fn Printer::label_reference(
   self : Printer,
-  name : Int,
-  start : Int,
-  end : Int,
+  name : Int32,
+  start : Int32,
+  end : Int32,
 ) -> Unit {
   for index = self.labels.active.length() - 1 {
     guard index >= 0 else {
@@ -44,7 +44,7 @@ fn Printer::label_name(self : Printer) -> String {
 
 ///|
 /// Functions and class static blocks have independent label namespaces.
-fn Printer::isolated_block(self : Printer, id : Int) -> Unit {
+fn Printer::isolated_block(self : Printer, id : Int32) -> Unit {
   let outer = self.labels.active
   self.labels.active = []
   self.block(id)

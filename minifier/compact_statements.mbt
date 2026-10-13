@@ -1,5 +1,5 @@
 ///|
-fn Program::compact_branch(self : Program, id : Int) -> Unit {
+fn Program::compact_branch(self : Program, id : Int32) -> Unit {
   let branch = self.nodes[id]
   guard branch.kind is If else { return }
   let consequent = self.nodes[self.single_statement(branch.b)]
@@ -23,7 +23,7 @@ fn Program::compact_branch(self : Program, id : Int) -> Unit {
 ///|
 /// The only false path exits this exact loop. Keep the original true-branch
 /// block so its lexical declarations still receive a fresh iteration scope.
-fn Program::compact_loop_guard(self : Program, id : Int) -> Unit {
+fn Program::compact_loop_guard(self : Program, id : Int32) -> Unit {
   let iteration = self.nodes[id]
   guard iteration.kind is For &&
     iteration.a < 0 &&
@@ -49,10 +49,10 @@ fn Program::compact_loop_guard(self : Program, id : Int) -> Unit {
 ///|
 fn Program::compact_statement_list(
   self : Program,
-  offset : Int,
-  count : Int,
+  offset : Int32,
+  count : Int32,
   bindings : ValueBindings,
-) -> Int {
+) -> Int32 {
   // Work backwards so a chain of adjacent single-use values can collapse
   // without rescanning the statement list to a fixed point.
   for index = count - 2; index >= 0; index = index - 1 {
@@ -60,6 +60,10 @@ fn Program::compact_statement_list(
     let next = self.edges[offset + index + 1]
     let branch = self.nodes[statement]
     let following = self.nodes[next]
+    if branch.kind is Block &&
+      self.sink_result_slot(statement, next, offset, index, bindings) {
+      continue
+    }
     if branch.kind is ExpressionStatement &&
       following.kind is (Return | Throw | ExpressionStatement) &&
       following.a >= 0 &&
@@ -80,7 +84,12 @@ fn Program::compact_statement_list(
       branch.c >= 0 &&
       following.kind is Return &&
       following.a >= 0 &&
-      self.compact_value_branch_return(statement, next) {
+      (
+        self.fold_returning_result_slot(
+          statement, next, offset, index, bindings,
+        ) ||
+        self.compact_value_branch_return(statement, next)
+      ) {
       self.nodes[statement] = Node::new(Elided, 0, 0, 0, 0)
       self.edges[offset + index] = next
       self.edges[offset + index + 1] = statement
@@ -108,7 +117,11 @@ fn Program::compact_statement_list(
 }
 
 ///|
-fn Program::live_statements(self : Program, offset : Int, count : Int) -> Int {
+fn Program::live_statements(
+  self : Program,
+  offset : Int32,
+  count : Int32,
+) -> Int32 {
   let mut source_directives = true
   let mut output_directives = true
   for read = 0, kept = 0 {
@@ -135,7 +148,11 @@ fn Program::live_statements(self : Program, offset : Int, count : Int) -> Int {
 }
 
 ///|
-fn Program::sequence_pair(self : Program, first : Int, second : Int) -> Int {
+fn Program::sequence_pair(
+  self : Program,
+  first : Int32,
+  second : Int32,
+) -> Int32 {
   let offset = self.edges.length()
   self.edges.push(first)
   self.edges.push(second)
@@ -145,8 +162,8 @@ fn Program::sequence_pair(self : Program, first : Int, second : Int) -> Int {
 ///|
 fn Program::inline_adjacent_value(
   self : Program,
-  declaration_id : Int,
-  consumer_id : Int,
+  declaration_id : Int32,
+  consumer_id : Int32,
   bindings : ValueBindings,
 ) -> Bool {
   let declaration = self.nodes[declaration_id]
@@ -162,7 +179,7 @@ fn Program::inline_adjacent_value(
   }
   let symbol = self.references[pattern.a].symbol
   let entry = self.symbols[symbol]
-  guard (entry.scope > 0 || bindings.rename_top_level) &&
+  guard entry.scope > 0 &&
     entry.flags == 0 &&
     entry.link < 0 &&
     entry.use_count == 2 &&
@@ -202,7 +219,7 @@ fn Program::inline_adjacent_value(
 }
 
 ///|
-fn Program::is_primary_value(self : Program, id : Int) -> Bool {
+fn Program::is_primary_value(self : Program, id : Int32) -> Bool {
   let node = self.nodes[id]
   match node.kind {
     Identifier
@@ -218,7 +235,7 @@ fn Program::is_primary_value(self : Program, id : Int) -> Bool {
 }
 
 ///|
-fn Program::has_optional_chain(self : Program, id : Int) -> Bool {
+fn Program::has_optional_chain(self : Program, id : Int32) -> Bool {
   guard id >= 0 else { return false }
   let node = self.nodes[id]
   match node.kind {
@@ -229,7 +246,7 @@ fn Program::has_optional_chain(self : Program, id : Int) -> Bool {
 }
 
 ///|
-fn Program::first_statement_expression(self : Program, id : Int) -> Int {
+fn Program::first_statement_expression(self : Program, id : Int32) -> Int32 {
   let node = self.nodes[id]
   match node.kind {
     Return | Throw | ExpressionStatement | If | Switch => node.a
@@ -243,9 +260,9 @@ fn Program::first_statement_expression(self : Program, id : Int) -> Int {
 /// Do not cross calls, coercions, short-circuit arms, scopes or loop boundaries.
 fn Program::leading_value_read(
   self : Program,
-  id : Int,
+  id : Int32,
   movement : ValueMovement,
-) -> Int {
+) -> Int32 {
   guard id >= 0 else { return -1 }
   let node = self.nodes[id]
   match node.kind {
@@ -314,7 +331,7 @@ fn Program::leading_value_read(
 ///|
 fn Program::stable_assignment_target(
   self : Program,
-  id : Int,
+  id : Int32,
   movement : ValueMovement,
 ) -> Bool {
   let node = self.nodes[self.unwrapped_expression(id)]
@@ -328,10 +345,10 @@ fn Program::stable_assignment_target(
 ///|
 fn Program::leading_list_read(
   self : Program,
-  offset : Int,
-  count : Int,
+  offset : Int32,
+  count : Int32,
   movement : ValueMovement,
-) -> Int {
+) -> Int32 {
   for index in 0..<count {
     let expression = self.edges[offset + index]
     guard expression >= 0 else { continue }

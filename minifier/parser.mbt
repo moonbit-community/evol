@@ -2,11 +2,11 @@
 priv struct Parser {
   program : Program
   lexer : Lexer
-  pending_edges : Array[Int]
-  mut scope : Int
+  pending_edges : Array[Int32]
+  mut scope : Int32
   mut allow_in : Bool
   mut in_generator : Bool
-  mut long_value_literal_count : Int
+  mut long_value_literal_count : Int32
 }
 
 ///|
@@ -106,7 +106,7 @@ fn Parser::peek_is_keyword(
 }
 
 ///|
-fn Parser::nearest_var_scope(self : Parser) -> Int {
+fn Parser::nearest_var_scope(self : Parser) -> Int32 {
   // Parsing scopes form a tree rooted at the module scope.
   for scope = self.scope {
     let kind = self.program.scopes[scope].kind
@@ -118,10 +118,10 @@ fn Parser::nearest_var_scope(self : Parser) -> Int {
 ///|
 fn Parser::add_reference(
   self : Parser,
-  scope_id : Int,
-  name_start : Int,
-  name_end : Int,
-) -> Int raise ParseError {
+  scope_id : Int32,
+  name_start : Int32,
+  name_end : Int32,
+) -> Int32 raise ParseError {
   self.program.add_reference({
     scope: scope_id,
     name_start,
@@ -134,10 +134,10 @@ fn Parser::add_reference(
 ///|
 fn Parser::declare_symbol(
   self : Parser,
-  scope_id : Int,
-  name_start : Int,
-  name_end : Int,
-) -> Int raise ParseError {
+  scope_id : Int32,
+  name_start : Int32,
+  name_end : Int32,
+) -> Int32 raise ParseError {
   let symbol = self.program.add_symbol(name_start, name_end, scope_id)
   let name = self.program.symbols[symbol].name
   // A var initializer writes through a same-name catch binding.
@@ -161,10 +161,10 @@ fn Parser::declare_symbol(
 ///|
 fn Parser::declare_pattern(
   self : Parser,
-  scope_id : Int,
-  name_start : Int,
-  name_end : Int,
-) -> Int raise ParseError {
+  scope_id : Int32,
+  name_start : Int32,
+  name_end : Int32,
+) -> Int32 raise ParseError {
   self.program.node(
     PatternIdentifier,
     self.declare_symbol(scope_id, name_start, name_end),
@@ -181,9 +181,9 @@ fn Parser::declare_pattern(
 ///|
 fn Parser::pattern(
   self : Parser,
-  scope_id : Int,
+  scope_id : Int32,
   allow_default : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let inner = self.pattern_atom(scope_id)
   guard allow_default && self.lexer.token == Assignment else { return inner }
   self.advance()
@@ -192,7 +192,10 @@ fn Parser::pattern(
 }
 
 ///|
-fn Parser::pattern_atom(self : Parser, scope_id : Int) -> Int raise ParseError {
+fn Parser::pattern_atom(
+  self : Parser,
+  scope_id : Int32,
+) -> Int32 raise ParseError {
   match self.lexer.token {
     Identifier => {
       let name_start = self.lexer.start
@@ -207,7 +210,10 @@ fn Parser::pattern_atom(self : Parser, scope_id : Int) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::array_pattern(self : Parser, scope_id : Int) -> Int raise ParseError {
+fn Parser::array_pattern(
+  self : Parser,
+  scope_id : Int32,
+) -> Int32 raise ParseError {
   self.expect(LeftBracket)
   let items = self.begin_edges()
   while self.lexer.token != RightBracket && self.lexer.token != EndOfFile {
@@ -233,8 +239,8 @@ fn Parser::array_pattern(self : Parser, scope_id : Int) -> Int raise ParseError 
 ///|
 fn Parser::object_pattern(
   self : Parser,
-  scope_id : Int,
-) -> Int raise ParseError {
+  scope_id : Int32,
+) -> Int32 raise ParseError {
   self.expect(LeftBrace)
   let items = self.begin_edges()
   while self.lexer.token != RightBrace && self.lexer.token != EndOfFile {
@@ -255,8 +261,8 @@ fn Parser::object_pattern(
 ///|
 fn Parser::pattern_property(
   self : Parser,
-  scope_id : Int,
-) -> Int raise ParseError {
+  scope_id : Int32,
+) -> Int32 raise ParseError {
   let (key, is_computed) = self.property_key_with_computed()
   guard !self.eat(Colon) else {
     let binding = self.pattern(scope_id, true)
@@ -279,7 +285,7 @@ fn Parser::pattern_property(
 ///|
 fn Parser::property_key_with_computed(
   self : Parser,
-) -> (Int, Bool) raise ParseError {
+) -> (Int32, Bool) raise ParseError {
   guard self.lexer.token == LeftBracket else {
     return (self.property_key(), false)
   }
@@ -320,7 +326,7 @@ fn Parser::statements(
 }
 
 ///|
-fn Parser::statement(self : Parser) -> Int raise ParseError {
+fn Parser::statement(self : Parser) -> Int32 raise ParseError {
   match self.lexer.token {
     LeftBrace => self.block()
     Semicolon => {
@@ -333,7 +339,7 @@ fn Parser::statement(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::identifier_statement(self : Parser) -> Int raise ParseError {
+fn Parser::identifier_statement(self : Parser) -> Int32 raise ParseError {
   match self.lexer.keyword {
     Import if self.is_import_declaration() => self.parse_import()
     Export => self.parse_export()
@@ -423,7 +429,7 @@ fn Parser::is_import_declaration(self : Parser) -> Bool raise ParseError {
 }
 
 ///|
-fn Parser::expression_statement(self : Parser) -> Int raise ParseError {
+fn Parser::expression_statement(self : Parser) -> Int32 raise ParseError {
   let expression = self.expression()
   self.eat_semicolon()
   self.program.node(ExpressionStatement, expression, 0, 0, 0)
@@ -436,7 +442,7 @@ fn Parser::eat_semicolon(self : Parser) -> Unit raise ParseError {
 }
 
 ///|
-fn Parser::block(self : Parser) -> Int raise ParseError {
+fn Parser::block(self : Parser) -> Int32 raise ParseError {
   self.expect(LeftBrace)
   let outer_scope = self.scope
   let block_scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
@@ -452,7 +458,7 @@ fn Parser::block(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::declaration(self : Parser, kind : Int) -> Int raise ParseError {
+fn Parser::declaration(self : Parser, kind : Int32) -> Int32 raise ParseError {
   let declarations = self.declarators(kind)
   self.eat_semicolon()
   let { offset, count, } = self.program.edge_list(declarations)
@@ -460,7 +466,7 @@ fn Parser::declaration(self : Parser, kind : Int) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::parse_if(self : Parser) -> Int raise ParseError {
+fn Parser::parse_if(self : Parser) -> Int32 raise ParseError {
   self.expect(LeftParenthesis)
   let condition = self.expression()
   self.expect(RightParenthesis)
@@ -476,7 +482,7 @@ fn Parser::parse_if(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::parse_while(self : Parser) -> Int raise ParseError {
+fn Parser::parse_while(self : Parser) -> Int32 raise ParseError {
   self.expect(LeftParenthesis)
   let condition = self.expression()
   self.expect(RightParenthesis)
@@ -485,7 +491,7 @@ fn Parser::parse_while(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::parse_do_while(self : Parser) -> Int raise ParseError {
+fn Parser::parse_do_while(self : Parser) -> Int32 raise ParseError {
   let body = self.statement()
   guard self.lexer.token == Identifier && self.lexer.keyword == Keyword::While else {
     raise self.unexpected("while")
@@ -499,7 +505,7 @@ fn Parser::parse_do_while(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::parse_for(self : Parser) -> Int raise ParseError {
+fn Parser::parse_for(self : Parser) -> Int32 raise ParseError {
   let is_await = self.lexer.keyword == Keyword::Await
   if is_await {
     self.advance()
@@ -530,7 +536,7 @@ fn Parser::parse_for(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::for_initializer(self : Parser) -> (Int, Bool) raise ParseError {
+fn Parser::for_initializer(self : Parser) -> (Int32, Bool) raise ParseError {
   guard self.lexer.token != Semicolon else { return (-1, false) }
   let is_declaration = self.lexer.token == Identifier &&
     (
@@ -558,10 +564,10 @@ fn Parser::for_initializer(self : Parser) -> (Int, Bool) raise ParseError {
 ///|
 fn Parser::for_of_tail(
   self : Parser,
-  initializer : Int,
+  initializer : Int32,
   is_await : Bool,
-  outer_scope : Int,
-) -> Int raise ParseError {
+  outer_scope : Int32,
+) -> Int32 raise ParseError {
   self.advance()
   let iterable = self.assignment()
   self.expect(RightParenthesis)
@@ -583,9 +589,9 @@ fn Parser::for_of_tail(
 ///|
 fn Parser::for_in_tail(
   self : Parser,
-  initializer : Int,
-  outer_scope : Int,
-) -> Int raise ParseError {
+  initializer : Int32,
+  outer_scope : Int32,
+) -> Int32 raise ParseError {
   self.advance()
   let object = self.expression()
   self.expect(RightParenthesis)
@@ -597,9 +603,9 @@ fn Parser::for_in_tail(
 ///|
 fn Parser::classic_for_tail(
   self : Parser,
-  initializer : Int,
-  outer_scope : Int,
-) -> Int raise ParseError {
+  initializer : Int32,
+  outer_scope : Int32,
+) -> Int32 raise ParseError {
   self.expect(Semicolon)
   let condition = if self.lexer.token == Semicolon {
     -1
@@ -619,7 +625,10 @@ fn Parser::classic_for_tail(
 }
 
 ///|
-fn Parser::declaration_head(self : Parser, kind : Int) -> Int raise ParseError {
+fn Parser::declaration_head(
+  self : Parser,
+  kind : Int32,
+) -> Int32 raise ParseError {
   let declarations = self.declarators(kind)
   let { offset, count, } = self.program.edge_list(declarations)
   self.program.node(VariableDeclaration, kind, offset, count, 0)
@@ -628,7 +637,7 @@ fn Parser::declaration_head(self : Parser, kind : Int) -> Int raise ParseError {
 ///|
 fn Parser::declarators(
   self : Parser,
-  kind : Int,
+  kind : Int32,
 ) -> PendingEdges raise ParseError {
   let scope_id = if kind == DECLARATION_VAR {
     self.nearest_var_scope()
@@ -651,7 +660,7 @@ fn Parser::declarators(
 }
 
 ///|
-fn Parser::parse_return(self : Parser) -> Int raise ParseError {
+fn Parser::parse_return(self : Parser) -> Int32 raise ParseError {
   let argument = if self.lexer.newline_before ||
     self.lexer.token == Semicolon ||
     self.lexer.token == RightBrace ||
@@ -665,7 +674,7 @@ fn Parser::parse_return(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::parse_throw(self : Parser) -> Int raise ParseError {
+fn Parser::parse_throw(self : Parser) -> Int32 raise ParseError {
   guard !self.lexer.newline_before else {
     raise self.syntax_error("newline after throw")
   }
@@ -675,7 +684,7 @@ fn Parser::parse_throw(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::jump(self : Parser, is_break : Bool) -> Int raise ParseError {
+fn Parser::jump(self : Parser, is_break : Bool) -> Int32 raise ParseError {
   let (label_start, label_end, label_name) = if !self.lexer.newline_before &&
     self.lexer.token == Identifier {
     let start = self.lexer.start
@@ -692,7 +701,7 @@ fn Parser::jump(self : Parser, is_break : Bool) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::label(self : Parser) -> Int raise ParseError {
+fn Parser::label(self : Parser) -> Int32 raise ParseError {
   let label_start = self.lexer.start
   let label_end = self.lexer.end
   let label_name = self.program.identifier(label_start, label_end)
@@ -703,7 +712,7 @@ fn Parser::label(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::parse_with(self : Parser) -> Int raise ParseError {
+fn Parser::parse_with(self : Parser) -> Int32 raise ParseError {
   self.program.has_dynamic_scope = true
   self.expect(LeftParenthesis)
   let object = self.expression()
@@ -713,7 +722,7 @@ fn Parser::parse_with(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::parse_switch(self : Parser) -> Int raise ParseError {
+fn Parser::parse_switch(self : Parser) -> Int32 raise ParseError {
   self.expect(LeftParenthesis)
   let discriminant = self.expression()
   self.expect(RightParenthesis)
@@ -740,7 +749,7 @@ fn Parser::parse_switch(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::switch_case(self : Parser) -> Int raise ParseError {
+fn Parser::switch_case(self : Parser) -> Int32 raise ParseError {
   let condition = match self.lexer.token {
     Identifier if self.lexer.keyword == Keyword::Case => {
       self.advance()
@@ -775,7 +784,7 @@ fn Parser::at_switch_case_end(self : Parser) -> Bool {
 }
 
 ///|
-fn Parser::parse_try(self : Parser) -> Int raise ParseError {
+fn Parser::parse_try(self : Parser) -> Int32 raise ParseError {
   let block = self.block()
   let handler = if self.lexer.token == Identifier &&
     self.lexer.keyword == Keyword::Catch {
@@ -794,7 +803,7 @@ fn Parser::parse_try(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::catch_clause(self : Parser) -> Int raise ParseError {
+fn Parser::catch_clause(self : Parser) -> Int32 raise ParseError {
   self.advance()
   let outer_scope = self.scope
   self.scope = self.program.push_scope(outer_scope, SCOPE_CATCH)
@@ -814,8 +823,8 @@ fn Parser::catch_clause(self : Parser) -> Int raise ParseError {
 fn Parser::function(
   self : Parser,
   is_declaration : Bool,
-  is_async? : Bool = false,
-) -> Int raise ParseError {
+  is_async~ : Bool = false,
+) -> Int32 raise ParseError {
   let is_generator = self.eat(Asterisk)
   let mut name_reference = -1
   if self.lexer.token == Identifier {
@@ -856,11 +865,11 @@ fn Parser::function(
 ///|
 fn Parser::function_tail(
   self : Parser,
-  name_reference : Int,
+  name_reference : Int32,
   is_async : Bool,
   is_generator : Bool,
   bind_name_inside : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let outer_scope = self.scope
   let saved_generator = self.in_generator
   self.in_generator = is_generator
@@ -889,9 +898,9 @@ fn Parser::function_tail(
 ///|
 fn Parser::function_name_scope(
   self : Parser,
-  name_reference : Int,
-  outer_scope : Int,
-) -> Int raise ParseError {
+  name_reference : Int32,
+  outer_scope : Int32,
+) -> Int32 raise ParseError {
   let name_scope = self.program.push_scope(outer_scope, SCOPE_BLOCK)
   let reference = self.program.references[name_reference]
   let symbol = self.program.add_symbol(
@@ -910,7 +919,7 @@ fn Parser::function_name_scope(
 ///|
 fn Parser::function_parameters(
   self : Parser,
-  function_scope : Int,
+  function_scope : Int32,
 ) -> PendingEdges raise ParseError {
   self.expect(LeftParenthesis)
   let parameters = self.begin_edges()
@@ -929,7 +938,10 @@ fn Parser::function_parameters(
 }
 
 ///|
-fn Parser::class(self : Parser, is_declaration : Bool) -> Int raise ParseError {
+fn Parser::class(
+  self : Parser,
+  is_declaration : Bool,
+) -> Int32 raise ParseError {
   let name_reference = self.class_name_reference(is_declaration)
   let outer_scope = self.scope
   self.enter_class_scope(name_reference, is_declaration)
@@ -944,7 +956,7 @@ fn Parser::class(self : Parser, is_declaration : Bool) -> Int raise ParseError {
 fn Parser::class_name_reference(
   self : Parser,
   is_declaration : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let has_name = self.lexer.token == Identifier &&
     self.lexer.keyword != Keyword::Extends
   guard has_name else { return -1 }
@@ -960,7 +972,7 @@ fn Parser::class_name_reference(
 ///|
 fn Parser::enter_class_scope(
   self : Parser,
-  name_reference : Int,
+  name_reference : Int32,
   is_declaration : Bool,
 ) -> Unit raise ParseError {
   let class_scope = self.program.push_scope(self.scope, SCOPE_CLASS)
@@ -981,7 +993,7 @@ fn Parser::enter_class_scope(
 }
 
 ///|
-fn Parser::class_superclass(self : Parser) -> Int raise ParseError {
+fn Parser::class_superclass(self : Parser) -> Int32 raise ParseError {
   let has_extends = self.lexer.token == Identifier &&
     self.lexer.keyword == Keyword::Extends
   guard has_extends else { return -1 }
@@ -1004,11 +1016,11 @@ fn Parser::class_body_members(self : Parser) -> PendingEdges raise ParseError {
 ///|
 fn Parser::finish_class(
   self : Parser,
-  name_reference : Int,
-  superclass : Int,
+  name_reference : Int32,
+  superclass : Int32,
   members : PendingEdges,
   is_declaration : Bool,
-) -> Int {
+) -> Int32 {
   let { offset, count, } = self.program.edge_list(members)
   self.program.classes.push({
     name: name_reference,
@@ -1022,7 +1034,7 @@ fn Parser::finish_class(
 }
 
 ///|
-fn Parser::property_key(self : Parser) -> Int raise ParseError {
+fn Parser::property_key(self : Parser) -> Int32 raise ParseError {
   match self.lexer.token {
     Number => self.source_literal(NumberLiteral)
     StringLiteral | Identifier => self.source_literal(StringLiteral)
@@ -1037,7 +1049,7 @@ fn Parser::property_key(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::expression(self : Parser) -> Int raise ParseError {
+fn Parser::expression(self : Parser) -> Int32 raise ParseError {
   let first_expression = self.assignment()
   guard self.lexer.token == Comma else { return first_expression }
   let items = self.begin_edges()
@@ -1050,7 +1062,7 @@ fn Parser::expression(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::assignment(self : Parser) -> Int raise ParseError {
+fn Parser::assignment(self : Parser) -> Int32 raise ParseError {
   guard !(self.in_generator && self.lexer.keyword == Keyword::Yield) else {
     return self.yield_expression()
   }
@@ -1085,7 +1097,7 @@ fn Parser::assignment(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::yield_expression(self : Parser) -> Int raise ParseError {
+fn Parser::yield_expression(self : Parser) -> Int32 raise ParseError {
   self.advance()
   let delegated = !self.lexer.newline_before && self.eat(Asterisk)
   let operation = if delegated { Operator::YieldStar } else { Operator::Yield }
@@ -1109,7 +1121,7 @@ fn Parser::yield_expression(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::assignment_operator(self : Parser) -> Int {
+fn Parser::assignment_operator(self : Parser) -> Int32 {
   let operation = match self.lexer.token {
     Assignment => Operator::Assignment
     AdditionAssignment => Operator::Add
@@ -1133,7 +1145,7 @@ fn Parser::assignment_operator(self : Parser) -> Int {
 }
 
 ///|
-fn Parser::conditional(self : Parser) -> Int raise ParseError {
+fn Parser::conditional(self : Parser) -> Int32 raise ParseError {
   let condition = self.binary(1)
   guard self.lexer.token == Question else { return condition }
   self.advance()
@@ -1144,7 +1156,7 @@ fn Parser::conditional(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::binary_operator(self : Parser) -> (Int, Operator) {
+fn Parser::binary_operator(self : Parser) -> (Int32, Operator) {
   match self.lexer.token {
     ExponentiationOperator => (11, Operator::Exponent)
     Asterisk => (10, Operator::Multiply)
@@ -1178,7 +1190,10 @@ fn Parser::binary_operator(self : Parser) -> (Int, Operator) {
 }
 
 ///|
-fn Parser::binary(self : Parser, min_precedence : Int) -> Int raise ParseError {
+fn Parser::binary(
+  self : Parser,
+  min_precedence : Int32,
+) -> Int32 raise ParseError {
   for left = self.unary() {
     let (precedence, operation) = self.binary_operator()
     guard precedence >= min_precedence else { break left }
@@ -1208,7 +1223,7 @@ fn Parser::binary(self : Parser, min_precedence : Int) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::unary(self : Parser) -> Int raise ParseError {
+fn Parser::unary(self : Parser) -> Int32 raise ParseError {
   match self.lexer.token {
     LogicalNot => self.prefix_unary(Operator::LogicalNot)
     Tilde => self.prefix_unary(Operator::BitwiseNot)
@@ -1232,7 +1247,7 @@ fn Parser::unary(self : Parser) -> Int raise ParseError {
 fn Parser::prefix_unary(
   self : Parser,
   operation : Operator,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let operator = self.program.add_operator(operation)
   self.advance()
   let operand = self.unary()
@@ -1243,7 +1258,7 @@ fn Parser::prefix_unary(
 fn Parser::prefix_update(
   self : Parser,
   operation : Operator,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let operator = self.program.add_operator(operation)
   self.advance()
   let operand = self.unary()
@@ -1251,7 +1266,7 @@ fn Parser::prefix_update(
 }
 
 ///|
-fn Parser::postfix(self : Parser) -> Int raise ParseError {
+fn Parser::postfix(self : Parser) -> Int32 raise ParseError {
   let primary = self.primary()
   let expression = self.call_member_tail(primary)
   let has_postfix_update = !self.lexer.newline_before &&
@@ -1268,7 +1283,10 @@ fn Parser::postfix(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::call_member_tail(self : Parser, start : Int) -> Int raise ParseError {
+fn Parser::call_member_tail(
+  self : Parser,
+  start : Int32,
+) -> Int32 raise ParseError {
   for expression = start {
     match self.lexer.token {
       Dot => {
@@ -1296,9 +1314,9 @@ fn Parser::call_member_tail(self : Parser, start : Int) -> Int raise ParseError 
 ///|
 fn Parser::named_member(
   self : Parser,
-  object : Int,
+  object : Int32,
   is_optional : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let name_start = self.lexer.start
   let name_end = self.lexer.end
   self.advance()
@@ -1309,9 +1327,9 @@ fn Parser::named_member(
 ///|
 fn Parser::index_member(
   self : Parser,
-  object : Int,
+  object : Int32,
   is_optional : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   self.advance()
   let index = self.expression_with_in()
   self.expect(RightBracket)
@@ -1322,9 +1340,9 @@ fn Parser::index_member(
 ///|
 fn Parser::call_tail(
   self : Parser,
-  callee : Int,
+  callee : Int32,
   is_optional : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let { offset, count, } = self.arguments()
   let flags = if is_optional { CHAIN_OPTIONAL } else { 0 }
   self.program.node(Call, callee, offset, count, flags)
@@ -1333,8 +1351,8 @@ fn Parser::call_tail(
 ///|
 fn Parser::optional_chain_tail(
   self : Parser,
-  object : Int,
-) -> Int raise ParseError {
+  object : Int32,
+) -> Int32 raise ParseError {
   match self.lexer.token {
     LeftParenthesis => self.call_tail(object, true)
     LeftBracket => self.index_member(object, true)
@@ -1343,7 +1361,7 @@ fn Parser::optional_chain_tail(
 }
 
 ///|
-fn Parser::mark_direct_eval(self : Parser, expression : Int) -> Unit {
+fn Parser::mark_direct_eval(self : Parser, expression : Int32) -> Unit {
   let callee = for current = expression {
     let node = self.program.nodes[current]
     guard node.kind == Parenthesized else { break node }
@@ -1375,7 +1393,7 @@ fn Parser::arguments(self : Parser) -> EdgeRange raise ParseError {
 }
 
 ///|
-fn Parser::primary(self : Parser) -> Int raise ParseError {
+fn Parser::primary(self : Parser) -> Int32 raise ParseError {
   match self.lexer.token {
     Number => self.value_literal(NumberLiteral)
     StringLiteral => self.value_literal(StringLiteral)
@@ -1401,7 +1419,7 @@ fn Parser::primary(self : Parser) -> Int raise ParseError {
 fn Parser::value_literal(
   self : Parser,
   kind : NodeKind,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   if self.lexer.end - self.lexer.start >= MIN_POOLED_LITERAL_LENGTH {
     self.long_value_literal_count += 1
   }
@@ -1412,14 +1430,14 @@ fn Parser::value_literal(
 fn Parser::source_literal(
   self : Parser,
   kind : NodeKind,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let literal = self.program.node(kind, self.lexer.start, self.lexer.end, 0, 0)
   self.advance()
   literal
 }
 
 ///|
-fn Parser::identifier(self : Parser) -> Int raise ParseError {
+fn Parser::identifier(self : Parser) -> Int32 raise ParseError {
   match self.lexer.keyword {
     True => {
       self.advance()
@@ -1464,7 +1482,7 @@ fn Parser::identifier(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::async_expression(self : Parser) -> Int? raise ParseError {
+fn Parser::async_expression(self : Parser) -> Int32? raise ParseError {
   let next_token = self.peek_token()
   guard next_token == Identifier || next_token == LeftParenthesis else {
     return None
@@ -1493,7 +1511,7 @@ fn Parser::async_expression(self : Parser) -> Int? raise ParseError {
 }
 
 ///|
-fn Parser::identifier_reference(self : Parser) -> Int raise ParseError {
+fn Parser::identifier_reference(self : Parser) -> Int32 raise ParseError {
   let start = self.lexer.start
   let end = self.lexer.end
   self.advance()
@@ -1510,7 +1528,7 @@ fn Parser::identifier_reference(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::parse_new(self : Parser) -> Int raise ParseError {
+fn Parser::parse_new(self : Parser) -> Int32 raise ParseError {
   guard self.lexer.token != Dot else {
     self.advance()
     let name_start = self.lexer.start
@@ -1534,7 +1552,7 @@ fn Parser::parse_new(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::member_chain(self : Parser) -> Int raise ParseError {
+fn Parser::member_chain(self : Parser) -> Int32 raise ParseError {
   for expression = self.primary() {
     match self.lexer.token {
       Dot => {
@@ -1550,10 +1568,10 @@ fn Parser::member_chain(self : Parser) -> Int raise ParseError {
 ///|
 fn Parser::single_arrow(
   self : Parser,
-  name_start : Int,
-  name_end : Int,
+  name_start : Int32,
+  name_end : Int32,
   is_async : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let outer_scope = self.scope
   let saved_generator = self.in_generator
   self.in_generator = false
@@ -1586,7 +1604,7 @@ fn Parser::single_arrow(
 }
 
 ///|
-fn Parser::arrow_body(self : Parser) -> (Int, Int) raise ParseError {
+fn Parser::arrow_body(self : Parser) -> (Int32, Int32) raise ParseError {
   guard self.lexer.token == LeftBrace else {
     return (self.assignment(), FUNCTION_EXPRESSION_BODY)
   }
@@ -1594,7 +1612,7 @@ fn Parser::arrow_body(self : Parser) -> (Int, Int) raise ParseError {
 }
 
 ///|
-fn Parser::parentheses(self : Parser) -> Int raise ParseError {
+fn Parser::parentheses(self : Parser) -> Int32 raise ParseError {
   let expression = self.parenthesized()
   guard self.lexer.token == Arrow else {
     return self.finish_parenthesized(expression)
@@ -1603,7 +1621,7 @@ fn Parser::parentheses(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::template_literal(self : Parser) -> Int raise ParseError {
+fn Parser::template_literal(self : Parser) -> Int32 raise ParseError {
   guard self.lexer.token == TemplateNoSubstitution else {
     return self.template()
   }
@@ -1611,7 +1629,7 @@ fn Parser::template_literal(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::template(self : Parser) -> Int raise ParseError {
+fn Parser::template(self : Parser) -> Int32 raise ParseError {
   let parts = self.begin_edges()
   let mut quasi_count = 0
   while true {
@@ -1638,7 +1656,7 @@ fn Parser::template(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::array_literal(self : Parser) -> Int raise ParseError {
+fn Parser::array_literal(self : Parser) -> Int32 raise ParseError {
   self.expect(LeftBracket)
   let items = self.begin_edges()
   let mut trailing_comma = false
@@ -1674,7 +1692,7 @@ fn Parser::array_literal(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::object_literal(self : Parser) -> Int raise ParseError {
+fn Parser::object_literal(self : Parser) -> Int32 raise ParseError {
   self.expect(LeftBrace)
   let properties = self.begin_edges()
   let mut trailing_comma = false
@@ -1699,7 +1717,7 @@ fn Parser::object_literal(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::object_property(self : Parser) -> Int raise ParseError {
+fn Parser::object_property(self : Parser) -> Int32 raise ParseError {
   guard self.lexer.token != Ellipsis else {
     self.advance()
     let inner = self.assignment_with_in()
@@ -1739,7 +1757,7 @@ fn Parser::property_modifier_follows(self : Parser) -> Bool raise ParseError {
 }
 
 ///|
-fn Parser::object_method_kind(self : Parser) -> Int raise ParseError {
+fn Parser::object_method_kind(self : Parser) -> Int32 raise ParseError {
   let is_accessor = self.lexer.token == Identifier &&
     (self.lexer.keyword == Keyword::Get || self.lexer.keyword == Keyword::Set) &&
     self.property_modifier_follows()
@@ -1754,7 +1772,10 @@ fn Parser::object_method_kind(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::shorthand_property(self : Parser, key : Int) -> Int raise ParseError {
+fn Parser::shorthand_property(
+  self : Parser,
+  key : Int32,
+) -> Int32 raise ParseError {
   let reference = self.add_reference(
     self.scope,
     self.program.nodes[key].a,
@@ -1775,7 +1796,7 @@ fn Parser::shorthand_property(self : Parser, key : Int) -> Int raise ParseError 
 /// Parameter initializers cannot see declarations from the function body.
 /// Body var declarations matching a parameter keep its spelling, preserving
 /// JavaScript's initialization from the parameter environment.
-fn Parser::function_body(self : Parser) -> Int raise ParseError {
+fn Parser::function_body(self : Parser) -> Int32 raise ParseError {
   let parameters = self.scope
   let saved_allow_in = self.allow_in
   self.allow_in = true
@@ -1796,7 +1817,7 @@ fn Parser::function_body(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::assignment_with_in(self : Parser) -> Int raise ParseError {
+fn Parser::assignment_with_in(self : Parser) -> Int32 raise ParseError {
   let saved_allow_in = self.allow_in
   self.allow_in = true
   let expression = self.assignment()
@@ -1805,7 +1826,7 @@ fn Parser::assignment_with_in(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn Parser::expression_with_in(self : Parser) -> Int raise ParseError {
+fn Parser::expression_with_in(self : Parser) -> Int32 raise ParseError {
   let saved_allow_in = self.allow_in
   self.allow_in = true
   let expression = self.expression()
@@ -1814,7 +1835,7 @@ fn Parser::expression_with_in(self : Parser) -> Int raise ParseError {
 }
 
 ///|
-fn function_modifier_flags(is_async : Bool, is_generator : Bool) -> Int {
+fn function_modifier_flags(is_async : Bool, is_generator : Bool) -> Int32 {
   let async_flag = if is_async { FUNCTION_ASYNC } else { 0 }
   let generator_flag = if is_generator { FUNCTION_GENERATOR } else { 0 }
   async_flag | generator_flag

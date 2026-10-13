@@ -1,5 +1,5 @@
 ///|
-fn NameAlphabet::short_name(alphabet : NameAlphabet, ordinal : Int) -> String {
+fn NameAlphabet::short_name(alphabet : NameAlphabet, ordinal : Int32) -> String {
   let builder = StringBuilder()
   let first_radix = alphabet.first.length()
   let rest_radix = alphabet.rest.length()
@@ -26,7 +26,7 @@ let keywords : @hashset.HashSet[String] = @hashset.HashSet([
 ])
 
 ///|
-fn Program::symbol_name(program : Program, symbol : Int) -> String {
+fn Program::symbol_name(program : Program, symbol : Int32) -> String {
   program.names[program.symbols[symbol].name]
 }
 
@@ -36,7 +36,7 @@ fn Program::mangle(program : Program, rename_top_level : Bool) -> Unit {
   let reserved = program.reserve_symbol_names(rename_top_level)
   program.alphabet = program.name_alphabet()
   let declarations = program.renameable_declarations()
-  let captured = program.captured_symbols()
+  let captured = program.captured_symbols(declarations)
   program.assign_symbol_names(reserved, declarations, captured)
 }
 
@@ -75,8 +75,8 @@ fn Program::reserve_symbol_names(
 }
 
 ///|
-fn Program::renameable_declarations(self : Program) -> Array[Array[Int]] {
-  let declarations : Array[Array[Int]] = Array::makei(self.scopes.length(), _ => {
+fn Program::renameable_declarations(self : Program) -> Array[Array[Int32]] {
+  let declarations : Array[Array[Int32]] = Array::makei(self.scopes.length(), _ => {
     []
   })
   for index in 0..<self.symbols.length() {
@@ -91,20 +91,33 @@ fn Program::renameable_declarations(self : Program) -> Array[Array[Int]] {
 }
 
 ///|
-fn Program::captured_symbols(self : Program) -> Array[@hashset.HashSet[Int]?] {
-  let captured : Array[@hashset.HashSet[Int]?] = Array::make(
+fn Program::captured_symbols(
+  self : Program,
+  declarations : Array[Array[Int32]],
+) -> Array[@hashset.HashSet[Int32]?] {
+  let captured : Array[@hashset.HashSet[Int32]?] = Array::make(
     self.scopes.length(),
     None,
   )
   for reference in self.references {
     guard reference.symbol >= 0 else { continue }
-    self.reserve_capture(captured, reference.scope, reference.symbol)
+    self.reserve_capture(
+      captured,
+      declarations,
+      reference.scope,
+      reference.symbol,
+    )
   }
   // Parameters copied into a function-body environment and linked catch/var
   // declarations also constrain names even when the binding is never read.
   for scope in 0..<self.scopes.length() {
     for _, symbol in self.scope_members[scope] {
-      self.reserve_capture(captured, scope, self.symbol_root(symbol))
+      self.reserve_capture(
+        captured,
+        declarations,
+        scope,
+        self.symbol_root(symbol),
+      )
     }
   }
   captured
@@ -114,11 +127,11 @@ fn Program::captured_symbols(self : Program) -> Array[@hashset.HashSet[Int]?] {
 fn Program::assign_symbol_names(
   self : Program,
   reserved : @hashset.HashSet[String],
-  declarations : Array[Array[Int]],
-  captured : Array[@hashset.HashSet[Int]?],
+  declarations : Array[Array[Int32]],
+  captured : Array[@hashset.HashSet[Int32]?],
 ) -> Unit {
   let candidates = self.generated_names
-  let blocked : Array[Int] = []
+  let blocked : Array[Int32] = []
   let generator = NameGenerator::new(self.alphabet, reserved)
   // Scope allocation is preorder; ancestors receive names before descendants.
   for scope in 0..<self.scopes.length() {
@@ -157,9 +170,10 @@ fn Program::assign_symbol_names(
 /// occurrence to its owning scope. Disjoint subtrees may reuse that name.
 fn Program::reserve_capture(
   program : Program,
-  captured : Array[@hashset.HashSet[Int]?],
-  scope : Int,
-  symbol : Int,
+  captured : Array[@hashset.HashSet[Int32]?],
+  declarations : Array[Array[Int32]],
+  scope : Int32,
+  symbol : Int32,
 ) -> Unit {
   let binding = program.symbols[symbol]
   guard (binding.flags & (SYMBOL_PRESERVED | SYMBOL_ELIDED)) == 0 else {
@@ -167,6 +181,10 @@ fn Program::reserve_capture(
   }
   for current = scope {
     guard current >= 0 && current != binding.scope else { break }
+    // Empty scopes assign no names, but captures still constrain ancestors.
+    if declarations[current].length() == 0 {
+      continue program.scopes[current].parent
+    }
     let capture_set = if captured[current] is Some(existing) {
       existing
     } else {

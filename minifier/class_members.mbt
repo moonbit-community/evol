@@ -10,7 +10,7 @@ priv enum ClassPrefix {
 ///|
 #valtype
 priv struct ClassKey {
-  node : Int
+  node : Int32
   computed : Bool
   prefix : ClassPrefix
 }
@@ -30,7 +30,7 @@ fn Parser::class_key(self : Parser) -> ClassKey raise ParseError {
 }
 
 ///|
-fn ClassKey::flags(self : ClassKey, is_static : Bool) -> Int {
+fn ClassKey::flags(self : ClassKey, is_static : Bool) -> Int32 {
   (if is_static { CLASS_MEMBER_STATIC } else { 0 }) |
   (if self.computed { CLASS_MEMBER_COMPUTED } else { 0 })
 }
@@ -42,8 +42,8 @@ fn Parser::class_method(
   is_static : Bool,
   is_async : Bool,
   is_generator : Bool,
-  kind : Int,
-) -> Int raise ParseError {
+  kind : Int32,
+) -> Int32 raise ParseError {
   let function = self.function_tail(-1, is_async, is_generator, false)
   self.program.node(Method, key.node, function, kind, key.flags(is_static))
 }
@@ -85,7 +85,7 @@ fn ClassKey::is_static_modifier(
 }
 
 ///|
-fn Parser::class_static_block(self : Parser) -> Int raise ParseError {
+fn Parser::class_static_block(self : Parser) -> Int32 raise ParseError {
   let outer_scope = self.scope
   self.scope = self.program.push_scope(outer_scope, SCOPE_FUNCTION)
   let body = self.block()
@@ -99,7 +99,7 @@ fn Parser::class_member_tail(
   key : ClassKey,
   is_static : Bool,
   is_generator : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let following = self.lexer.token
   guard !is_generator && following != LeftParenthesis else {
     return self.class_method(
@@ -128,7 +128,7 @@ fn Parser::prefixed_class_method(
   prefix : ClassPrefix,
   is_static : Bool,
   is_async : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let is_generator = is_async && self.eat(Asterisk)
   let key = self.class_key()
   guard self.lexer.token == LeftParenthesis else {
@@ -147,7 +147,7 @@ fn Parser::class_field(
   self : Parser,
   key : ClassKey,
   is_static : Bool,
-) -> Int raise ParseError {
+) -> Int32 raise ParseError {
   let initializer = if self.eat(Assignment) {
     self.assignment_with_in()
   } else {

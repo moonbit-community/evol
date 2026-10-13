@@ -3,8 +3,8 @@
 /// Nested lists finish first; releasing a list restores its parent's suffix.
 #valtype
 priv struct PendingEdges {
-  buffer : Array[Int]
-  start : Int
+  buffer : Array[Int32]
+  start : Int32
 }
 
 ///|
@@ -13,23 +13,23 @@ fn Parser::begin_edges(self : Parser) -> PendingEdges {
 }
 
 ///|
-fn PendingEdges::push(self : PendingEdges, item : Int) -> Unit {
+fn PendingEdges::push(self : PendingEdges, item : Int32) -> Unit {
   self.buffer.push(item)
 }
 
 ///|
-fn PendingEdges::length(self : PendingEdges) -> Int {
+fn PendingEdges::length(self : PendingEdges) -> Int32 {
   self.buffer.length() - self.start
 }
 
 ///|
 #alias("_[_]")
-fn PendingEdges::at(self : PendingEdges, index : Int) -> Int {
+fn PendingEdges::at(self : PendingEdges, index : Int32) -> Int32 {
   self.buffer[self.start + index]
 }
 
 ///|
-fn PendingEdges::view(self : PendingEdges) -> ArrayView[Int] {
+fn PendingEdges::view(self : PendingEdges) -> ArrayView[Int32] {
   self.buffer[self.start:]
 }
 
