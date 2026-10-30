@@ -11,13 +11,13 @@ fn decimal_spelling(
   start : Int32,
   end : Int32,
 ) -> DecimalSpelling? {
-  let spelling = source.view(start_offset=start, end_offset=end)
+  let spelling = source[start:end]
   let exponent_marker = lexmatch spelling with longest {
     (re"^[0-9.]*[eE]", after=rest) => rest.start_offset() - 1
     re"^[0-9.]*$" => end
     _ => return None
   }
-  let mantissa = source.view(start_offset=start, end_offset=exponent_marker)
+  let mantissa = source[start:exponent_marker]
   let can_omit_leading_zero = mantissa =~ (re"^0\.[0-9.]", after=_)
   Some({
     mantissa_start: if can_omit_leading_zero {
@@ -36,7 +36,7 @@ fn integer_exponent_spelling(
   start : Int32,
   end : Int32,
 ) -> String? {
-  let spelling = source.view(start_offset=start, end_offset=end)
+  let spelling = source[start:end]
   // Leading-zero integers may be legacy octal.
   guard !(spelling =~ (re"^0", after=_)) else { return None }
   let trailing_zeros = lexmatch spelling {
@@ -63,7 +63,7 @@ fn shortened_exponent_spelling(
 ) -> String? {
   let marker = decimal.exponent_marker
   guard marker + 1 < end else { return None }
-  let exponent = source.view(start_offset=marker + 1, end_offset=end)
+  let exponent = source[marker + 1:end]
   let (digits, has_minus) = lexmatch exponent with longest {
     (re"^-", after=digits) => (digits, true)
     (re"^\+", after=digits) => (digits, false)
@@ -215,7 +215,7 @@ fn quoted_string_piece(
   start : Int32,
   end : Int32,
 ) -> QuotedStringPiece {
-  lexmatch source.view(start_offset=start, end_offset=end) with longest {
+  lexmatch source[start:end] with longest {
     (re"^[^\\'\"]+", after=rest) => Unchanged(rest.start_offset())
     (re"^\\'", after=rest) => EscapedSingleQuote(rest.start_offset())
     (re"^\\\"", after=rest) => EscapedDoubleQuote(rest.start_offset())
@@ -253,7 +253,7 @@ fn Printer::string(self : Printer, start : Int32, end : Int32) -> Unit {
     self.span(start, end, true)
     return
   }
-  let spelling = source.view(start_offset=start, end_offset=end)
+  let spelling = source[start:end]
   guard spelling =~ (re"^['\"]", after=_) else {
     // Property keys and module aliases also use StringLiteral arena nodes.
     self.span(start, end, true)

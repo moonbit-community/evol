@@ -110,7 +110,7 @@ fn Lexer::line_comment_tail(self : Lexer) -> Unit {
   while self.position < self.source.length() &&
         self.source.get_char(self.position) is None {
     self.position += 1
-    lexmatch self.source.view(start_offset=self.position) {
+    lexmatch self.source[self.position:] {
       (re"^[^\n\r\u2028\u2029]*", after=rest) =>
         self.position = rest.start_offset()
     }
@@ -123,7 +123,7 @@ fn Lexer::block_comment_tail(
   comment_start : Int32,
 ) -> Unit raise ParseError {
   while true {
-    lexmatch self.source.view(start_offset=self.position) with longest {
+    lexmatch self.source[self.position:] with longest {
       (re"^\*+/", after=rest) => {
         self.position = rest.start_offset()
         return
@@ -168,10 +168,7 @@ fn Lexer::finish_identifier(
     self.position = rest.start_offset()
     return self.identifier_tail(self.start)
   }
-  let spelling = self.source.view(
-    start_offset=self.start,
-    end_offset=rest.start_offset(),
-  )
+  let spelling = self.source[self.start:rest.start_offset()]
   self.keyword = keyword_of(spelling)
   self.finish_token(Identifier, rest)
 }
@@ -194,7 +191,7 @@ fn Lexer::skip_ascii_whitespace(self : Lexer) -> Unit {
 ///|
 /// Called with position immediately after the comment marker.
 fn Lexer::line_comment(self : Lexer) -> Unit {
-  lexmatch self.source.view(start_offset=self.position) {
+  lexmatch self.source[self.position:] {
     (re"^[^\n\r\u2028\u2029]*", after=rest) =>
       self.position = rest.start_offset()
   }
@@ -210,7 +207,7 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
   while true {
     self.start = self.position
     guard self.position < length else {
-      return self.finish_token(EndOfFile, source.view(start_offset=length))
+      return self.finish_token(EndOfFile, source[length:])
     }
     let character = source[self.position]
     match character {
@@ -219,9 +216,7 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
         continue
       }
       'A'..<='Z' | 'a'..<='z' | '_' | '$' =>
-        return self.identifier_token(
-          source.view(start_offset=self.position + 1),
-        )
+        return self.identifier_token(source[self.position + 1:])
       '0'..<='9' => return self.number_token()
       '.' => {
         let next = self.position + 1
@@ -274,7 +269,7 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
       '~' => return self.finish_single_character_token(Tilde)
       '\u0000'..<='\u007F' => return self.operator_token()
       _ =>
-        lexmatch source.view(start_offset=self.position) {
+        lexmatch source[self.position:] {
           (re"^[\u2028\u2029]+", after=rest) => {
             self.newline_before = true
             self.position = rest.start_offset()
@@ -294,7 +289,7 @@ fn Lexer::next(self : Lexer) -> Unit raise ParseError {
 
 ///|
 fn Lexer::number_token(self : Lexer) -> Unit {
-  lexmatch self.source.view(start_offset=self.position) with longest {
+  lexmatch self.source[self.position:] with longest {
     (re"^" + NUMBER_SPELLING, after=rest) => self.finish_token(Number, rest)
     _ => abort("number dispatch requires a number prefix")
   }
@@ -323,7 +318,7 @@ fn ascii_identifier_rest(input : StringView) -> StringView {
     }
     continue position + 1
   }
-  input.view(start_offset=end)
+  input[end:]
 }
 
 ///|
@@ -350,7 +345,7 @@ fn Lexer::identifier_token(
 
 ///|
 fn Lexer::operator_token(self : Lexer) -> Unit raise ParseError {
-  lexmatch self.source.view(start_offset=self.position) with longest {
+  lexmatch self.source[self.position:] with longest {
     (re"^\?", after=rest) => return self.finish_token(Question, rest)
     (re"^\?\?", after=rest) => return self.finish_token(NullishCoalescing, rest)
     (re"^\?\?=", after=rest) =>
@@ -412,10 +407,7 @@ fn Lexer::operator_token(self : Lexer) -> Unit raise ParseError {
     (re"^/=", after=rest) => return self.finish_token(DivisionAssignment, rest)
     // Before a digit, ? starts a conditional and the dot belongs to a number.
     (re"^\?\.[0-9]", after=_) =>
-      return self.finish_token(
-        Question,
-        self.source.view(start_offset=self.position + 1),
-      )
+      return self.finish_token(Question, self.source[self.position + 1:])
     (re"^\?\.", after=rest) => return self.finish_token(OptionalChaining, rest)
     _ => {
       guard self.source.get_char(self.position) is Some(_) else {

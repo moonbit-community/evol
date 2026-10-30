@@ -75,10 +75,7 @@ fn PropertyAnalysis::key_name(
   guard node.kind == StringLiteral || node.kind == TemplateNoSubstitution else {
     return None
   }
-  let is_quoted = program.source.view(start_offset=node.a) =~ (
-    PROPERTY_QUOTE_START,
-    after=_,
-  )
+  let is_quoted = program.source[node.a:] =~ (PROPERTY_QUOTE_START, after=_)
   guard !is_quoted else { return self.quoted_name(node.a, node.b) }
   guard !computed else { return None }
   let name = program.names[program.identifier(node.a, node.b)]
@@ -137,10 +134,7 @@ fn PropertyAnalysis::preserve_strings(self : PropertyAnalysis) -> Unit {
       (node.kind == StringLiteral || node.kind == TemplateNoSubstitution) else {
       continue
     }
-    guard program.source.view(start_offset=node.a) =~ (
-      PROPERTY_QUOTE_START,
-      after=_,
-    ) else {
+    guard program.source[node.a:] =~ (PROPERTY_QUOTE_START, after=_) else {
       continue
     }
     guard self.quoted_name(node.a, node.b) is Some(name) else { continue }
