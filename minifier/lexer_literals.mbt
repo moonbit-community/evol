@@ -17,7 +17,7 @@ fn string_text_rest(input : StringView, quote : UInt16) -> StringView {
 fn Lexer::string(self : Lexer, quote : UInt16) -> Unit raise ParseError {
   self.position += 1
   while true {
-    let input = self.source.view(start_offset=self.position)
+    let input = self.source[self.position:]
     let remaining = string_text_rest(input, quote)
     self.position = remaining.start_offset()
     lexmatch remaining with longest {
@@ -51,7 +51,7 @@ fn Lexer::regex(self : Lexer) -> Unit raise ParseError {
   self.position += 1
   let mut in_class = false
   while true {
-    lexmatch self.source.view(start_offset=self.position) with longest {
+    lexmatch self.source[self.position:] with longest {
       (re"^[^\\/\[\]\r\n\u{2028}\u{2029}]+", after=rest) =>
         self.position = rest.start_offset()
       (re"^\\[^\r\n\u{2028}\u{2029}]", after=rest) =>
@@ -68,7 +68,7 @@ fn Lexer::regex(self : Lexer) -> Unit raise ParseError {
         self.position = rest.start_offset()
         guard !in_class else { continue }
         let flags_end = raw_identifier_end(self.source, self.position)
-        self.finish_token(Regex, self.source.view(start_offset=flags_end))
+        self.finish_token(Regex, self.source[flags_end:])
         return
       }
       (re"^\[", after=rest) => {
@@ -98,7 +98,7 @@ fn Lexer::template_chunk(
 ) -> Unit raise ParseError {
   let content_start = self.position
   while true {
-    lexmatch self.source.view(start_offset=self.position) with longest {
+    lexmatch self.source[self.position:] with longest {
       (re"^[^\\`$]+", after=rest) => self.position = rest.start_offset()
       (re"^\\[\u{0}-\u{10FFFF}]", after=rest) =>
         self.position = rest.start_offset()

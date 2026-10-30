@@ -30,7 +30,7 @@ fn position_at(source : String, offset : Int32) -> Position {
   let limit = if offset < length { offset } else { length }
   for index = 0, line = 1, column = 1 {
     guard index < limit else { break { line, column, } }
-    lexmatch source.view(start_offset=index, end_offset=limit) with longest {
+    lexmatch source[index:limit] with longest {
       (re"^(?:\r\n|[\n\r\u2028\u2029])", after=rest) =>
         continue rest.start_offset(), line + 1, 1
       (re"^[^\n\r\u2028\u2029]+" as text, after=rest) =>

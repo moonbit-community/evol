@@ -8,7 +8,7 @@ const RAW_IDENTIFIER_CONTINUATION : Regex = re"(?:[A-Za-z0-9_$#]|[^\u0000-\u007F
 ///|
 fn raw_identifier_end(source : String, start : Int32) -> Int32 {
   for position = start {
-    let end = lexmatch source.view(start_offset=position) with longest {
+    let end = lexmatch source[position:] with longest {
       (re"^" + RAW_IDENTIFIER_CONTINUATION, after=rest) => rest.start_offset()
       _ => position
     }
@@ -28,7 +28,7 @@ fn Lexer::identifier_tail(
 ) -> Unit raise ParseError {
   while self.position < self.source.length() {
     self.position = raw_identifier_end(self.source, self.position)
-    lexmatch self.source.view(start_offset=self.position) {
+    lexmatch self.source[self.position:] {
       (re"^\\", after=_) => {
         let (character, end) = identifier_escape(self.source, self.position)
         let allowed = lexmatch character.to_string() {
@@ -66,8 +66,7 @@ fn identifier_escape(
       "expected Unicode identifier escape",
     )
   }
-  let (code_point, end) = lexmatch
-    source.view(start_offset=start + 1) with longest {
+  let (code_point, end) = lexmatch source[start + 1:] with longest {
     (re"^u[{]", after=digits) =>
       read_braced_identifier_escape(source, digits.start_offset())
     (re"^u", after=digits) =>
@@ -92,7 +91,7 @@ fn read_fixed_identifier_escape(
   source : String,
   digits_start : Int32,
 ) -> (Int32, Int32) raise ParseError {
-  lexmatch source.view(start_offset=digits_start) with longest {
+  lexmatch source[digits_start:] with longest {
     (re"^[0-9A-Fa-f]{0,4}" as digits, after=rest) => {
       guard digits.length() == 4 else {
         raise InvalidEscape(
@@ -110,7 +109,7 @@ fn read_braced_identifier_escape(
   source : String,
   digits_start : Int32,
 ) -> (Int32, Int32) raise ParseError {
-  lexmatch source.view(start_offset=digits_start) with longest {
+  lexmatch source[digits_start:] with longest {
     (re"^[0-9A-Fa-f]*" as digits, after=rest) => {
       let code_point = decode_identifier_code_point(source, digits)
       lexmatch rest {
@@ -150,10 +149,7 @@ fn decode_identifier_code_point(
     significant.length()
   }
   let prefix_end = significant.start_offset() + prefix_length
-  let prefix = source.view(
-    start_offset=significant.start_offset(),
-    end_offset=prefix_end,
-  )
+  let prefix = source[significant.start_offset():prefix_end]
   guard decode_escape_digits(prefix, 16) is Some(code_point) else {
     raise InvalidEscape(
       position_at(source, prefix_end),
@@ -197,7 +193,7 @@ fn identifier_name(
   let output = StringBuilder()
   for position = start {
     guard position < end else { break }
-    lexmatch source.view(start_offset=position, end_offset=end) {
+    lexmatch source[position:end] {
       (re"^\\", after=_) => {
         let (character, next) = identifier_escape(source, position)
         output.write_char(character)
@@ -216,8 +212,7 @@ fn identifier_name(
 ///|
 fn identifier_literal_end(source : String, start : Int32, end : Int32) -> Int32 {
   for position = start {
-    let literal_end = lexmatch
-      source.view(start_offset=position, end_offset=end) with longest {
+    let literal_end = lexmatch source[position:end] with longest {
       (re"^[^\\]+", after=rest) => rest.start_offset()
       _ => position
     }
