@@ -1,11 +1,12 @@
 ///|
+#derive(Eq)
 priv enum ClassPrefix {
   Plain
   Static
   Getter
   Setter
   Async
-} derive(Eq)
+}
 
 ///|
 #valtype

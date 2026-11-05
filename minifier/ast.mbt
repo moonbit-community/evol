@@ -1,4 +1,5 @@
 ///|
+#derive(Eq, Debug)
 priv enum NodeKind {
   Identifier
   NumberLiteral
@@ -68,12 +69,13 @@ priv enum NodeKind {
   ClassField
   ClassStaticBlock
   ModuleStatement
-} derive(Eq, Debug)
+}
 
 ///|
 extend NodeKind with @debug.Debug::{to_repr}
 
 ///|
+#derive(Eq)
 priv enum Operator {
   Assignment
   Add
@@ -113,7 +115,7 @@ priv enum Operator {
   YieldStar
   Increment
   Decrement
-} derive(Eq)
+}
 
 ///|
 #valtype

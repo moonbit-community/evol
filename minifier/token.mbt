@@ -1,4 +1,5 @@
 ///|
+#derive(Eq, Debug)
 priv enum Token {
   EndOfFile
   Identifier
@@ -66,7 +67,7 @@ priv enum Token {
   NotEqual
   StrictlyEqual
   StrictlyNotEqual
-} derive(Eq, Debug)
+}
 
 ///|
 extend Token with @debug.Debug::{to_repr}

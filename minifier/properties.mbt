@@ -75,7 +75,7 @@ fn PropertyAnalysis::key_name(
   guard node.kind == StringLiteral || node.kind == TemplateNoSubstitution else {
     return None
   }
-  let is_quoted = program.source.view(start_offset=node.a) =~ (
+  let is_quoted = program.source.exact_view(start=node.a) =~ (
     PROPERTY_QUOTE_START,
     after=_,
   )
@@ -137,7 +137,7 @@ fn PropertyAnalysis::preserve_strings(self : PropertyAnalysis) -> Unit {
       (node.kind == StringLiteral || node.kind == TemplateNoSubstitution) else {
       continue
     }
-    guard program.source.view(start_offset=node.a) =~ (
+    guard program.source.exact_view(start=node.a) =~ (
       PROPERTY_QUOTE_START,
       after=_,
     ) else {

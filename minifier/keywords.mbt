@@ -1,4 +1,5 @@
 ///|
+#derive(Eq)
 priv enum Keyword {
   NotKeyword
   As
@@ -46,7 +47,7 @@ priv enum Keyword {
   While
   With
   Yield
-} derive(Eq)
+}
 
 ///|
 fn Keyword::spelling(self : Keyword) -> String {
