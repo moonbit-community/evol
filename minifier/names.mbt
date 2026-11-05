@@ -119,7 +119,7 @@ fn deferred_identifier_span(
   guard start < end else { return false }
   match source[start] {
     '\'' | '"' | '`' | '#' | '.' | '0'..<='9' => false
-    _ => keyword_of(source.exact_view(start~, end~)) is NotKeyword
+    _ => keyword_of(source[start:end]) is NotKeyword
   }
 }
 
